@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "darkraise",
+  "version": "0.1.0",
+  "description": "Darkraise's collection of Claude Code plugins.",
+  "owner": {
+    "name": "Darkraise",
+    "email": "quangtc94@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "example-plugin",
+      "source": "./plugins/example-plugin",
+      "description": "A minimal template plugin. Clone it to start a new plugin.",
+      "category": "template",
+      "keywords": ["example", "template", "starter"]
+    }
+  ]
+}

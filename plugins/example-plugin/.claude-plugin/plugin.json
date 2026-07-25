@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "example-plugin",
+  "version": "0.1.0",
+  "description": "A minimal template plugin demonstrating a slash command and a skill.",
+  "author": {
+    "name": "Darkraise",
+    "email": "quangtc94@gmail.com"
+  },
+  "license": "MIT",
+  "keywords": ["example", "template", "starter"]
+}
