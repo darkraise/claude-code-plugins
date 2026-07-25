@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "telegram-notify",
+  "description": "Push a Telegram message when a Claude Code session finishes a turn, ends on a question, or needs your attention. Cross-platform (Windows/Linux/macOS), multi-account aware, with optional LLM turn summaries.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Darkraise"
+  },
+  "homepage": "https://github.com/darkraise/claude-code-plugins/tree/main/plugins/telegram-notify",
+  "repository": "https://github.com/darkraise/claude-code-plugins",
+  "license": "MIT",
+  "keywords": [
+    "telegram",
+    "notifications",
+    "hooks",
+    "push",
+    "mobile"
+  ]
+}
