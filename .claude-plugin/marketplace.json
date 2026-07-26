@@ -21,6 +21,13 @@
       "description": "Push a Telegram message when a Claude Code session finishes a turn, ends on a question, or needs your attention. Cross-platform, multi-account aware, optional LLM summaries.",
       "category": "productivity",
       "keywords": ["telegram", "notifications", "hooks", "push", "mobile"]
+    },
+    {
+      "name": "dcc-superpower-companions",
+      "source": "./plugins/dcc-superpower-companions",
+      "description": "Extends superpowers with 16 model and effort tiered implementer subagents, a four-axis task scoring rubric, and a defined escalation ladder.",
+      "category": "workflow",
+      "keywords": ["superpowers", "subagents", "planning", "effort", "model-selection"]
     }
   ]
 }

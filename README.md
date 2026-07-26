@@ -24,6 +24,7 @@ GitHub repository is `darkraise/claude-code-plugins`.
 | Plugin | Description |
 | ------ | ----------- |
 | `telegram-notify` | Telegram push notifications when a session finishes a turn, ends on a question, or needs your attention. Cross-platform, multi-account aware, optional LLM summaries. |
+| `dcc-superpower-companions` | Extends superpowers with 16 model and effort tiered implementer subagents. Scores every plan task, records the assigned implementer in the plan, and dispatches it with a defined escalation ladder. |
 | `example-plugin` | A minimal template plugin demonstrating a slash command and a skill. Clone it to start a new plugin. |
 
 ## Adding a new plugin

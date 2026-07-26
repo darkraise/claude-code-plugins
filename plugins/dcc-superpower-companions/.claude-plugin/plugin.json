@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "dcc-superpower-companions",
+  "description": "Extends superpowers with 16 model and effort tiered implementer subagents. Scores every plan task on a four-axis rubric, records the assigned implementer in the plan, and dispatches that agent with a defined escalation ladder.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Darkraise"
+  },
+  "homepage": "https://github.com/darkraise/claude-code-plugins/tree/main/plugins/dcc-superpower-companions",
+  "repository": "https://github.com/darkraise/claude-code-plugins",
+  "license": "MIT",
+  "keywords": [
+    "superpowers",
+    "subagents",
+    "planning",
+    "effort",
+    "model-selection"
+  ]
+}
