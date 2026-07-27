@@ -31,21 +31,32 @@ _dcc_meter() { # _dcc_meter <label> <pct> <width> <reset-epoch> <tokens|"">
 }
 
 dcc_segment() { # dcc_segment <name> -> DCC_SEG_SPEC, DCC_SEG_TEXT
-  local name="${1:-}" t
+  local name="${1:-}" t cwd root home
   DCC_SEG_SPEC=""; DCC_SEG_TEXT=""
   case "$name" in
     dir)
-      if [ -n "$DCC_GIT_ROOT" ]; then
-        case "$P_CWD" in
-          "$DCC_GIT_ROOT") DCC_SEG_TEXT="${DCC_GIT_ROOT##*/}" ;;
-          "$DCC_GIT_ROOT"/*) DCC_SEG_TEXT="${DCC_GIT_ROOT##*/}${P_CWD#"$DCC_GIT_ROOT"}" ;;
-          *) DCC_SEG_TEXT="$P_CWD" ;;
+      # Claude Code reports the working directory in Windows form while the git
+      # root and $HOME arrive in the MSYS form, so both sides of every
+      # comparison below are folded into one namespace first (see lib/path.sh).
+      dcc_path_norm "$P_CWD";        cwd="$DCC_PATH"
+      dcc_path_norm "$DCC_GIT_ROOT"; root="$DCC_PATH"
+      dcc_path_norm "${HOME:-}";     home="$DCC_PATH"
+      if [ -n "$root" ]; then
+        case "$cwd" in
+          "$root")   DCC_SEG_TEXT="${root##*/}" ;;
+          "$root"/*) DCC_SEG_TEXT="${root##*/}${cwd#"$root"}" ;;
+          *)         DCC_SEG_TEXT="$cwd" ;;
+        esac
+      elif [ -n "$home" ]; then
+        # Guarded: an empty $home would turn the "$home"/* pattern into a bare
+        # /*, which matches every absolute path.
+        case "$cwd" in
+          "$home")   DCC_SEG_TEXT="~" ;;
+          "$home"/*) DCC_SEG_TEXT="~${cwd#"$home"}" ;;
+          *)         DCC_SEG_TEXT="$cwd" ;;
         esac
       else
-        case "$P_CWD" in
-          "$HOME"/*) DCC_SEG_TEXT="~${P_CWD#"$HOME"}" ;;
-          *)         DCC_SEG_TEXT="$P_CWD" ;;
-        esac
+        DCC_SEG_TEXT="$cwd"
       fi
       ;;
     git)

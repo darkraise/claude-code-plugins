@@ -5,6 +5,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib.sh"
+source "$HERE/../scripts/lib/path.sh"
 source "$HERE/../scripts/lib/config.sh"
 F="$HERE/fixtures"
 
@@ -15,8 +16,39 @@ check "no CLAUDE_CONFIG_DIR resolves to ~/.claude" "$DCC_ACCT_KEY" "~/.claude"
 HOME=/home/u CLAUDE_CONFIG_DIR=/home/u/.claude-alt dcc_config_key
 check "CLAUDE_CONFIG_DIR is abbreviated to a ~ key" "$DCC_ACCT_KEY" "~/.claude-alt"
 
-HOME=/home/u CLAUDE_CONFIG_DIR='C:\Users\q\.claude-alt2' dcc_config_key
-check "windows backslashes are normalized" "$DCC_ACCT_KEY" "C:/Users/q/.claude-alt2"
+# Windows hands the config directory over in the drive-letter namespace while Git
+# Bash sets $HOME to the MSYS one. Every spelling of the same directory has to
+# collapse to the one key users are told to write, or the account tint -- the
+# reason this plugin exists -- silently never applies to a non-default account.
+HOME=/c/Users/q CLAUDE_CONFIG_DIR='C:/Users/q/.claude-alt2' dcc_config_key
+check "a drive-letter config dir inside HOME yields a ~ key"  "$DCC_ACCT_KEY" "~/.claude-alt2"
+
+HOME=/c/Users/q CLAUDE_CONFIG_DIR='C:\Users\q\.claude-alt2' dcc_config_key
+check "a backslash config dir inside HOME yields a ~ key"     "$DCC_ACCT_KEY" "~/.claude-alt2"
+
+HOME=/c/Users/q CLAUDE_CONFIG_DIR='/c/Users/q/.claude-alt2' dcc_config_key
+check "an MSYS config dir inside HOME yields a ~ key"         "$DCC_ACCT_KEY" "~/.claude-alt2"
+
+HOME=/c/Users/q CLAUDE_CONFIG_DIR='c:/Users/q/.claude-alt2/' dcc_config_key
+check "a lowercase drive and a trailing slash yield the same key" "$DCC_ACCT_KEY" "~/.claude-alt2"
+
+HOME='C:\Users\q' CLAUDE_CONFIG_DIR='C:/Users/q/.claude-alt2' dcc_config_key
+check "a Windows-form HOME is folded as well"                 "$DCC_ACCT_KEY" "~/.claude-alt2"
+
+HOME=/c/Users/q CLAUDE_CONFIG_DIR='C:\Users\q' dcc_config_key
+check "a config dir equal to HOME yields a bare ~"            "$DCC_ACCT_KEY" "~"
+
+HOME=/c/Users/q CLAUDE_CONFIG_DIR='D:\Configs\claude' dcc_config_key
+check "a config dir genuinely outside HOME stays absolute"    "$DCC_ACCT_KEY" "/d/Configs/claude"
+
+# The key is worth nothing unless it selects an account entry. config-valid.json
+# tints "~/.claude-alt" -- the form the README, the seeded config and the slash
+# command all tell users to write -- so this is the assertion that fails when the
+# key comes out as a raw absolute path instead.
+HOME=/c/Users/q CLAUDE_CONFIG_DIR='C:\Users\q\.claude-alt' dcc_config_key
+dcc_parse_all "$(cat "$F/full.json")" "$F/config-valid.json" /dev/null
+check "a Windows-form config dir still resolves the account tint" "$DCC_ACCOUNT_COLOR" "magenta"
+unset CLAUDE_CONFIG_DIR
 
 # --- defaults when no config file exists --------------------------------------
 DCC_ACCT_KEY="~/.claude"

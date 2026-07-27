@@ -55,6 +55,7 @@ dcc_git_collect() { # dcc_git_collect <dir> -> parsed globals + DCC_GIT_ROOT; no
   dcc_git_parse "$out"
   [ -n "$DCC_GIT_BRANCH" ] || return 1
   root=$($to git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || root=""
-  DCC_GIT_ROOT="${root//\\//}"
+  dcc_path_norm "$root"
+  DCC_GIT_ROOT="$DCC_PATH"
   return 0
 }

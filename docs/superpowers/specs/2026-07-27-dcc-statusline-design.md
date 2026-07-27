@@ -85,6 +85,7 @@ plugins/dcc-statusline/
   .claude-plugin/plugin.json
   scripts/
     statusline.sh          entry: stdin -> single jq parse -> render
+    lib/path.sh            fold Windows and MSYS path forms into one namespace
     lib/config.sh          locate, parse, validate, default
     lib/git.sh             one porcelain=v2 call -> branch, ahead/behind, counts
     lib/segments.sh        one function per segment

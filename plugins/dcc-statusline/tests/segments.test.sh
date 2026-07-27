@@ -5,6 +5,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib.sh"
+source "$HERE/../scripts/lib/path.sh"
 source "$HERE/../scripts/lib/color.sh"
 source "$HERE/../scripts/lib/render.sh"
 source "$HERE/../scripts/lib/git.sh"
@@ -33,6 +34,45 @@ check "outside a repo, HOME is abbreviated" "$(seg dir)" "~/projects/thing"
 
 P_CWD="/opt/elsewhere"
 check "outside HOME, the path is shown whole" "$(seg dir)" "/opt/elsewhere"
+
+# Claude Code reports the working directory in the Windows drive-letter namespace
+# ("C:\Users\you"), git reports its root in the mixed one ("D:/repo"), and $HOME
+# is the MSYS one ("/c/Users/you"). Comparing any two of those raw fails, so every
+# spelling of a directory has to resolve to the same label.
+DCC_GIT_ROOT="/d/Repositories/Personal/claude-code-plugins"
+for spelling in "D:/Repositories/Personal/claude-code-plugins/plugins" \
+                'D:\Repositories\Personal\claude-code-plugins\plugins' \
+                "/d/Repositories/Personal/claude-code-plugins/plugins"; do
+  P_CWD="$spelling"
+  check "inside a repo, [$spelling] is repo-relative" "$(seg dir)" "claude-code-plugins/plugins"
+done
+
+for spelling in "D:/Repositories/Personal/claude-code-plugins" \
+                'D:\Repositories\Personal\claude-code-plugins' \
+                "/d/Repositories/Personal/claude-code-plugins"; do
+  P_CWD="$spelling"
+  check "at the repo root, [$spelling] is the repo name" "$(seg dir)" "claude-code-plugins"
+done
+
+DCC_GIT_ROOT=""
+HOME="/c/Users/quang"
+for spelling in "C:/Users/quang" 'C:\Users\quang' "/c/Users/quang"; do
+  P_CWD="$spelling"
+  check "HOME itself abbreviates to ~ for [$spelling]" "$(seg dir)" "~"
+done
+
+for spelling in "C:/Users/quang/projects/thing" \
+                'C:\Users\quang\projects\thing' \
+                "/c/Users/quang/projects/thing"; do
+  P_CWD="$spelling"
+  check "under HOME, [$spelling] abbreviates" "$(seg dir)" "~/projects/thing"
+done
+
+P_CWD='D:\Elsewhere\thing'
+check "outside HOME, a Windows path is shown whole in one namespace" \
+  "$(seg dir)" "/d/Elsewhere/thing"
+
+HOME="/home/u"
 
 # --- git ----------------------------------------------------------------------
 DCC_GIT_BRANCH="main"; DCC_GIT_DIRTY=0

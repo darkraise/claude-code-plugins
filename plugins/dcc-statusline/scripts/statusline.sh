@@ -10,6 +10,7 @@ set -uo pipefail
 DCC_DIR="${BASH_SOURCE[0]%/*}"
 [ "$DCC_DIR" = "${BASH_SOURCE[0]}" ] && DCC_DIR="."
 
+source "$DCC_DIR/lib/path.sh"
 source "$DCC_DIR/lib/color.sh"
 source "$DCC_DIR/lib/config.sh"
 source "$DCC_DIR/lib/render.sh"

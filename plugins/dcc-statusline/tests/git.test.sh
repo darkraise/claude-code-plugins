@@ -6,6 +6,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib.sh"
+source "$HERE/../scripts/lib/path.sh"
 source "$HERE/../scripts/lib/git.sh"
 F="$HERE/fixtures"
 
@@ -39,5 +40,17 @@ if dcc_git_collect "$tmp"; then rc=0; else rc=1; fi
 check "collect fails outside a repository"   "$rc" "1"
 check "collect leaves no stale branch"       "$DCC_GIT_BRANCH" ""
 rmdir "$tmp"
+
+# `git rev-parse --show-toplevel` answers in the drive-letter namespace on Windows
+# ("D:/repo") while the dir segment compares against $HOME in the MSYS one, so the
+# root has to come back already folded. Skipped where there is no repository.
+if dcc_git_collect "$HERE"; then
+  case "$DCC_GIT_ROOT" in
+    ?:*|*\\*) form="windows" ;;
+    /*)       form="msys" ;;
+    *)        form="$DCC_GIT_ROOT" ;;
+  esac
+  check "the git root comes back in one namespace" "$form" "msys"
+fi
 
 finish

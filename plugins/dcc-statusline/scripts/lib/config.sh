@@ -89,23 +89,28 @@ dcc_config_path() { # -> DCC_CONFIG_PATH
   DCC_CONFIG_PATH="${DCC_STATUSLINE_CONFIG:-$HOME/.claude/dcc-statusline.json}"
 }
 
-dcc_config_key() { # -> DCC_ACCT_KEY, the "~/.claude-alt" form used as a config key
-  local d="${CLAUDE_CONFIG_DIR:-}"
-  [ -n "$d" ] || d="$HOME/.claude"
-  d="${d//\\//}"
-  d="${d%/}"
+dcc_config_key() { # dcc_config_key [home-dir] -> DCC_ACCT_KEY, the "~/.claude-alt" config key
+  # Both operands are folded into one namespace first (see lib/path.sh): the
+  # config directory arrives in Windows form while $HOME is the MSYS form, and
+  # comparing them raw yields a raw absolute path that matches no accounts entry.
+  local d h
+  dcc_path_norm "${1:-${HOME:-}}"; h="$DCC_PATH"
+  dcc_path_norm "${CLAUDE_CONFIG_DIR:-}"; d="$DCC_PATH"
+  [ -n "$d" ] || d="$h/.claude"
   case "$d" in
-    "$HOME"/*) DCC_ACCT_KEY="~${d#"$HOME"}" ;;
-    "$HOME")   DCC_ACCT_KEY="~" ;;
-    *)         DCC_ACCT_KEY="$d" ;;
+    "$h"/*) DCC_ACCT_KEY="~${d#"$h"}" ;;
+    "$h")   DCC_ACCT_KEY="~" ;;
+    *)      DCC_ACCT_KEY="$d" ;;
   esac
 }
 
 dcc_claude_json_path() { # -> DCC_CLAUDE_JSON, or /dev/null when absent
   # The default account keeps its state at $HOME/.claude.json; every other
   # account keeps it inside its own CLAUDE_CONFIG_DIR.
-  local d="${CLAUDE_CONFIG_DIR:-}" p
-  if [ -n "$d" ]; then p="${d%/}/.claude.json"; else p="$HOME/.claude.json"; fi
+  local d p
+  dcc_path_norm "${CLAUDE_CONFIG_DIR:-}"; d="$DCC_PATH"
+  [ -n "$d" ] || { dcc_path_norm "${HOME:-}"; d="$DCC_PATH"; }
+  p="$d/.claude.json"
   if [ -f "$p" ]; then DCC_CLAUDE_JSON="$p"; else DCC_CLAUDE_JSON=/dev/null; fi
 }
 
