@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "dcc-statusline",
+  "description": "A two-line Claude Code status line: git detail, model and session state, plus context and rate-limit meters colored by usage level, with the line tinted by which Claude account the session belongs to.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Darkraise"
+  },
+  "homepage": "https://github.com/darkraise/claude-code-plugins/tree/main/plugins/dcc-statusline",
+  "repository": "https://github.com/darkraise/claude-code-plugins",
+  "license": "MIT",
+  "keywords": [
+    "statusline",
+    "status-line",
+    "multi-account",
+    "rate-limits",
+    "context-window"
+  ]
+}
