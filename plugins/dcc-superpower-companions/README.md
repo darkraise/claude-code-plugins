@@ -40,6 +40,10 @@ A `PreToolUse` hook on the `Skill` tool adds context when
 invoked, and stays silent otherwise. It costs nothing in sessions that never
 invoke those skills.
 
+The hook shells out to `bash` and `jq` on every `Skill` tool invocation. If `jq`
+is missing it degrades gracefully to a silent no-op, but `bash` is required for
+the hook to run at all.
+
 `superpowers:executing-plans` is deliberately not matched. It runs plan tasks
 inline without subagents, so the `Implementer` lines are inert there, which is
 correct rather than broken.
