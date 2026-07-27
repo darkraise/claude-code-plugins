@@ -88,17 +88,45 @@ dcc_claude_json_path() { # -> DCC_CLAUDE_JSON, or /dev/null when absent
 }
 
 dcc_parse_all() { # dcc_parse_all <payload-json> <config-path> <claude-json-path>
-  local input="$1" cfg="$2" who="$3" out
+  local input="$1" cfg="$2" who="$3" out cfg_existed=0
   DCC_CONFIG_BAD=0
+  [ -f "$cfg" ] && cfg_existed=1
   [ -f "$cfg" ] || cfg=/dev/null
   [ -f "$who" ] || who=/dev/null
-  if ! out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --arg acct "${DCC_ACCT_KEY:-}" \
-                   --slurpfile cfg "$cfg" --slurpfile who "$who" \
-                   "$DCC_JQ_PROG" <<<"$input" 2>/dev/null); then
-    DCC_CONFIG_BAD=1
-    out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --arg acct "${DCC_ACCT_KEY:-}" \
-                --slurpfile cfg /dev/null --slurpfile who "$who" \
-                "$DCC_JQ_PROG" <<<"$input" 2>/dev/null) || return 1
+
+  if out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --arg acct "${DCC_ACCT_KEY:-}" \
+                 --slurpfile cfg "$cfg" --slurpfile who "$who" \
+                 "$DCC_JQ_PROG" <<<"$input" 2>/dev/null); then
+    eval "$out"; return 0
   fi
+
+  # The config might be the corrupt one; retry without it so a good account
+  # file (and its email) still comes through. A nonexistent config can't be
+  # the cause of a failure, so there is nothing to gain by retrying without one.
+  if [ "$cfg_existed" -eq 1 ] && \
+     out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --arg acct "${DCC_ACCT_KEY:-}" \
+                 --slurpfile cfg /dev/null --slurpfile who "$who" \
+                 "$DCC_JQ_PROG" <<<"$input" 2>/dev/null); then
+    DCC_CONFIG_BAD=1
+    eval "$out"; return 0
+  fi
+
+  # The config survived that retry (or never existed), so the account's
+  # .claude.json must be the corrupt one. Dropping only that keeps the config
+  # -- and any account tint it defines -- intact.
+  if [ "$cfg_existed" -eq 1 ] && \
+     out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --arg acct "${DCC_ACCT_KEY:-}" \
+                 --slurpfile cfg "$cfg" --slurpfile who /dev/null \
+                 "$DCC_JQ_PROG" <<<"$input" 2>/dev/null); then
+    eval "$out"; return 0
+  fi
+
+  # Both files are corrupt (or the account file is, and there was no config
+  # to begin with). Reaching here with cfg_existed=1 proves the config itself
+  # doesn't parse either -- the previous attempt just tried it alone and failed.
+  DCC_CONFIG_BAD=$cfg_existed
+  out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --arg acct "${DCC_ACCT_KEY:-}" \
+             --slurpfile cfg /dev/null --slurpfile who /dev/null \
+             "$DCC_JQ_PROG" <<<"$input" 2>/dev/null) || return 1
   eval "$out"
 }

@@ -67,4 +67,20 @@ check "malformed config is flagged"        "$DCC_CONFIG_BAD" "1"
 check "malformed config falls back to defaults" "$DCC_LINE2" "ctx cost 5h 7d"
 check "malformed config still parses payload"   "$P_MODEL"   "Opus"
 
+# --- malformed account file alone -----------------------------------------------
+DCC_ACCT_KEY="~/.claude-alt"
+dcc_parse_all "$(cat "$F/full.json")" "$F/config-valid.json" "$F/claude-bad.json"
+check "malformed account file still parses payload"      "$P_MODEL" "Opus"
+check "malformed account file yields empty email"        "$P_EMAIL" ""
+check "malformed account file is not a config problem"   "$DCC_CONFIG_BAD" "0"
+check "malformed account file still applies user config" "$DCC_LINE1" "dir model"
+check "malformed account file still resolves account tint" "$DCC_ACCOUNT_COLOR" "magenta"
+
+# --- both config and account file malformed -------------------------------------
+dcc_parse_all "$(cat "$F/full.json")" "$F/config-bad.json" "$F/claude-bad.json"
+check "double-malformed still parses payload"         "$P_MODEL"   "Opus"
+check "double-malformed falls back to default line two" "$DCC_LINE2" "ctx cost 5h 7d"
+check "double-malformed yields empty email"           "$P_EMAIL"   ""
+check "double-malformed is flagged as config bad"     "$DCC_CONFIG_BAD" "1"
+
 finish
