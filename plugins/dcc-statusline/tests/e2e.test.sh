@@ -9,7 +9,17 @@ F="$HERE/fixtures"
 
 export DCC_NOW=1785886800
 export DCC_STATUSLINE_CONFIG=/dev/null
-export CLAUDE_CONFIG_DIR=""
+
+# Hermetic account state. An empty CLAUDE_CONFIG_DIR sends the render to the real
+# $HOME/.claude.json, which made the result depend on the machine and printed the
+# machine owner's actual email address into the test output. A throwaway home with
+# a fixture account file removes both problems, and keeps the resolved config key
+# at "~/.claude" so the tint assertions still exercise the abbreviated form.
+fakehome="$(mktemp -d)"
+mkdir -p "$fakehome/.claude"
+cp "$F/claude.json" "$fakehome/.claude/.claude.json"
+export HOME="$fakehome"
+export CLAUDE_CONFIG_DIR="$fakehome/.claude"
 
 out="$(bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
 line1="$(printf '%s\n' "$out" | sed -n 1p)"
@@ -46,15 +56,30 @@ cat > "$cfg" <<'JSON'
 { "accounts": { "~/.claude": { "color": "magenta" } } }
 JSON
 raw="$(DCC_STATUSLINE_CONFIG="$cfg" bash "$SCRIPT" < "$F/full.json")"
-# Meters take their own ramp color; everything else -- including the
-# separators between segments -- takes the account tint. Line two mixes both
-# (meters plus the non-meter "cost" chip and its separators), so the tint
-# legitimately appears on both lines, not just line one; this checks for its
-# presence rather than counting matching lines, which is why a plain
-# grep -c/"1" comparison doesn't express the real invariant.
-tint="no"; printf '%s' "$raw" | grep -q $'\033\\[38;5;13m' && tint="yes"
-check "the account tint is applied" "$tint" "yes"
-check "the ramp color is applied to a meter" "$(printf '%s' "$raw" | grep -c $'\033\\[38;5;10m')" "1"
+raw1="$(printf '%s\n' "$raw" | sed -n 1p)"
+raw2="$(printf '%s\n' "$raw" | sed -n 2p)"
+# Meters take their own ramp color; everything else -- including the separators
+# between segments -- takes the account tint, so the tint legitimately appears on
+# both lines. Scoped to line one anyway: searching the whole output still passes
+# when line one renders empty, which is exactly the failure worth catching.
+tint="no"; printf '%s' "$raw1" | grep -q $'\033\\[38;5;13m' && tint="yes"
+check "the account tint paints line one" "$tint" "yes"
+# Counted with grep -o. grep -c counts matching *lines*, so it reads 1 no matter
+# how many meters are on the line -- and reads 0 the moment a user's config moves
+# one of them to the other line.
+check "every meter on line two takes the ramp color" \
+  "$(printf '%s' "$raw2" | grep -o $'\033\\[38;5;10m' | wc -l | tr -d ' ')" "3"
+
+# The same account directory spelled the way Windows hands it over must resolve to
+# the same "~/.claude" key. When it does not, the tint silently never applies and
+# the account file is never found -- with no error anywhere to say so.
+bs="$(printf '%s' "$CLAUDE_CONFIG_DIR" | tr '/' '\\')"
+raw1="$(CLAUDE_CONFIG_DIR="$bs" DCC_STATUSLINE_CONFIG="$cfg" bash "$SCRIPT" < "$F/full.json" | sed -n 1p)"
+tint="no"; printf '%s' "$raw1" | grep -q $'\033\\[38;5;13m' && tint="yes"
+check "a backslash-spelled config dir still applies the tint" "$tint" "yes"
+check "a backslash-spelled config dir still finds the account file" \
+  "$(printf '%s' "$raw1" | strip_ansi | grep -c 'someone@example.com')" "1"
 rm -f "$cfg"
 
+rm -rf "$fakehome"
 finish
