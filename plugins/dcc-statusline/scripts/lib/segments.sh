@@ -23,6 +23,12 @@ _dcc_meter() { # _dcc_meter <label> <pct> <width> <reset-epoch> <tokens|"">
       text="$text ($tokens)"
     fi
   fi
+  # Anything but a run of digits is dropped rather than fed to $(( )). Bash
+  # arithmetic on a float, an ISO date, or a bare word does not merely evaluate
+  # to zero: it raises a syntax error that aborts the whole render, taking the
+  # entire meter line with it. jq already coerces this field, so reaching the
+  # non-numeric branch means the coercion was bypassed.
+  case "$reset" in ''|*[!0-9]*) reset="" ;; esac
   if [ "$DCC_SHOW_ETA" -eq 1 ] && [ -n "$reset" ]; then
     dcc_eta $(( reset - DCC_NOW ))
     [ -n "$DCC_ETA" ] && text="$text ($DCC_ETA)"

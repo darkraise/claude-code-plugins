@@ -115,4 +115,53 @@ check "double-malformed falls back to default line two" "$DCC_LINE2" "ctx cost 5
 check "double-malformed yields empty email"           "$P_EMAIL"   ""
 check "double-malformed is flagged as config bad"     "$DCC_CONFIG_BAD" "1"
 
+# --- non-numeric resets_at ------------------------------------------------------
+# jq preserves a JSON float verbatim and many serializers emit epoch seconds that
+# way, so an uncoerced resets_at reaches bash arithmetic as "1785900000.0" -- a
+# syntax error that takes the whole meter line down rather than one segment.
+DCC_ACCT_KEY="~/.claude"
+dcc_parse_all '{"rate_limits":{"five_hour":{"used_percentage":23,"resets_at":1785900000.0}}}' /dev/null /dev/null
+check "a float resets_at is floored to an integer" "$P_5H_RESET" "1785900000"
+
+dcc_parse_all '{"rate_limits":{"seven_day":{"used_percentage":41,"resets_at":1.7864e9}}}' /dev/null /dev/null
+check "an exponent-notation resets_at is floored"  "$P_7D_RESET" "1786400000"
+
+dcc_parse_all '{"rate_limits":{"five_hour":{"used_percentage":23,"resets_at":"2026-07-28T10:00:00Z"}}}' /dev/null /dev/null
+check "a date-string resets_at yields empty"       "$P_5H_RESET" ""
+check "a date-string resets_at keeps its meter"    "$P_5H_PCT"   "23"
+
+dcc_parse_all '{"rate_limits":{"seven_day":{"used_percentage":41,"resets_at":"soon"}}}' /dev/null /dev/null
+check "a non-numeric resets_at yields empty"       "$P_7D_RESET" ""
+
+# --- payload type drift ----------------------------------------------------------
+# The fallback chain retries without the config and without the account file, but
+# never without the payload, so one wrong-typed field used to abort jq and blank
+# both lines. A bad field must now cost only its own segment.
+dcc_parse_all '{
+  "model": "Opus",
+  "workspace": "/tmp",
+  "cwd": "/tmp/here",
+  "context_window": "none",
+  "rate_limits": [],
+  "output_style": "verbose",
+  "cost": 5,
+  "effort": { "level": "xhigh" },
+  "thinking": { "enabled": true },
+  "fast_mode": true
+}' /dev/null /dev/null
+check "drift: a string model yields an empty model"      "$P_MODEL"   ""
+check "drift: a good sibling field still renders"        "$P_EFFORT"  "xhigh"
+check "drift: thinking still renders"                    "$P_THINK"   "1"
+check "drift: fast mode still renders"                   "$P_FAST"    "1"
+check "drift: a string workspace falls back to cwd"      "$P_CWD"     "/tmp/here"
+check "drift: a string context_window yields empty pct"  "$P_CTX_PCT" ""
+check "drift: an array rate_limits yields empty"         "$P_5H_PCT"  ""
+check "drift: a string output_style yields empty"        "$P_STYLE"   ""
+check "drift: a numeric cost yields empty"               "$P_COST"    ""
+check "drift: the config still loads"                    "$DCC_LINE2" "ctx cost 5h 7d"
+
+dcc_parse_all '{"model":{"display_name":"Opus"},"context_window":{"used_percentage":"47"}}' /dev/null /dev/null
+check "drift: a string percentage yields empty"          "$P_CTX_PCT" ""
+check "drift: the model survives a string percentage"    "$P_MODEL"   "Opus"
+
 finish

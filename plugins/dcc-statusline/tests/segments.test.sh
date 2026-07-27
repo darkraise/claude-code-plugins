@@ -140,6 +140,19 @@ check "an absent rate limit hides the meter" "$(seg 5h)" ""
 P_7D_PCT=41; P_7D_RESET=1786400000
 check "7d meter with a multi-day countdown" "$(seg 7d)" "7d [###.....] 41% (5d22h)"
 
+# Belt and braces for the reset value. jq coerces this field, but anything that
+# reached bash arithmetic uncoerced -- a float, an ISO date, a bare word -- raises
+# a syntax error (or, under set -u, an unbound-variable abort) that kills the
+# whole meter line instead of one countdown. stderr is folded into the captured
+# text so such an abort shows up as a failed assertion rather than passing quietly.
+P_5H_PCT=23
+for bad in "1785900000.0" "2026-07-28T10:00:00Z" "soon" "-5"; do
+  P_5H_RESET="$bad"
+  check "a non-numeric reset [$bad] costs only the countdown" \
+    "$( { seg 5h; } 2>&1 )" "5h [##......] 23%"
+done
+P_5H_PCT=""; P_5H_RESET=""
+
 # --- unknown ------------------------------------------------------------------
 check "an unknown segment name is ignored" "$(seg nosuchsegment)" ""
 

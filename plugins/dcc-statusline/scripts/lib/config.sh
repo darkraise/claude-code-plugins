@@ -27,10 +27,20 @@ DCC_DEFAULT_CONFIG='{
 
 # jq emits shell assignments. @sh quotes every interpolation, so a directory or
 # email containing quotes cannot escape into the eval.
+#
+# Every payload extraction reads `((path)? // null)` and goes through a
+# type-checking helper. The payload is the one input nobody validates: a field of
+# an unexpected type would otherwise abort jq, and since the fallback chain below
+# only ever retries without the *config* and the *account file*, an aborted parse
+# costs the entire status line rather than the one segment whose data was wrong.
+# The parentheses matter -- a bare `.a.b.c?` guards only the final index, so
+# `.rate_limits.five_hour` against an array still aborts.
 DCC_JQ_PROG='
 . as $p
 | (if ($cfg|length) > 0 then ($d * $cfg[0]) else $d end) as $c
-| def pct($v): if $v == null then "" else ($v|floor) end;
+| def num($v; $dflt): if ($v|type) == "number" then ($v|floor) else $dflt end;
+  def flt($v): if ($v|type) == "number" then $v else "" end;
+  def str($v): if ($v|type) == "string" then $v else "" end;
   @sh "DCC_LINE1=\($c.lines[0] // [] | join(" "))",
   @sh "DCC_LINE2=\($c.lines[1] // [] | join(" "))",
   @sh "DCC_SEP=\($c.separator)",
@@ -46,21 +56,21 @@ DCC_JQ_PROG='
   @sh "DCC_GLYPH_EMPTY=\($c.glyphs.empty)",
   @sh "DCC_GLYPH_DIRTY=\($c.glyphs.dirty)",
   @sh "DCC_ACCOUNT_COLOR=\($c.accounts[$acct].color // "")",
-  @sh "P_EMAIL=\(if ($who|length) > 0 then ($who[0].oauthAccount.emailAddress // "") else "" end)",
-  @sh "P_CWD=\($p.workspace.current_dir // $p.cwd // "")",
-  @sh "P_MODEL=\($p.model.display_name // "")",
-  @sh "P_EFFORT=\($p.effort.level // "")",
-  @sh "P_FAST=\(if $p.fast_mode then 1 else 0 end)",
-  @sh "P_THINK=\(if $p.thinking.enabled then 1 else 0 end)",
-  @sh "P_AGENT=\($p.agent.name // "")",
-  @sh "P_STYLE=\(if ($p.output_style.name // "default") == "default" then "" else ($p.output_style.name) end)",
-  @sh "P_CTX_PCT=\(pct($p.context_window.used_percentage))",
-  @sh "P_CTX_TOK=\($p.context_window.total_input_tokens // 0)",
-  @sh "P_COST=\($p.cost.total_cost_usd // "")",
-  @sh "P_5H_PCT=\(pct($p.rate_limits.five_hour.used_percentage))",
-  @sh "P_5H_RESET=\($p.rate_limits.five_hour.resets_at // "")",
-  @sh "P_7D_PCT=\(pct($p.rate_limits.seven_day.used_percentage))",
-  @sh "P_7D_RESET=\($p.rate_limits.seven_day.resets_at // "")"
+  @sh "P_EMAIL=\(str(($who[0].oauthAccount.emailAddress)? // null))",
+  @sh "P_CWD=\(str((($p.workspace.current_dir)? // ($p.cwd)?) // null))",
+  @sh "P_MODEL=\(str(($p.model.display_name)? // null))",
+  @sh "P_EFFORT=\(str(($p.effort.level)? // null))",
+  @sh "P_FAST=\(if (($p.fast_mode)? // false) then 1 else 0 end)",
+  @sh "P_THINK=\(if (($p.thinking.enabled)? // false) then 1 else 0 end)",
+  @sh "P_AGENT=\(str(($p.agent.name)? // null))",
+  @sh "P_STYLE=\(str(($p.output_style.name)? // null) | if . == "default" then "" else . end)",
+  @sh "P_CTX_PCT=\(num(($p.context_window.used_percentage)? // null; ""))",
+  @sh "P_CTX_TOK=\(num(($p.context_window.total_input_tokens)? // null; 0))",
+  @sh "P_COST=\(flt(($p.cost.total_cost_usd)? // null))",
+  @sh "P_5H_PCT=\(num(($p.rate_limits.five_hour.used_percentage)? // null; ""))",
+  @sh "P_5H_RESET=\(num(($p.rate_limits.five_hour.resets_at)? // null; ""))",
+  @sh "P_7D_PCT=\(num(($p.rate_limits.seven_day.used_percentage)? // null; ""))",
+  @sh "P_7D_RESET=\(num(($p.rate_limits.seven_day.resets_at)? // null; ""))"
 '
 
 # Defaults for every payload global dcc_parse_all can produce. Under `set -u`,
