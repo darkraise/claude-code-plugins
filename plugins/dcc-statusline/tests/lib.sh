@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -uo pipefail
 # Shared assertions. Every *.test.sh sources this, then calls finish at the end.
 pass=0 fail=0
 

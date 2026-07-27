@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -uo pipefail
 # Named colors to ANSI. Every function assigns a global rather than printing:
 # capturing output would require $(...), and each fork costs ~10-20ms under
 # MSYS2, which the render path cannot afford.
