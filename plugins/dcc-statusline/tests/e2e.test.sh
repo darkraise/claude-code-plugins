@@ -39,8 +39,17 @@ check "no doubled separator when meters are absent" \
   "$(printf '%s' "$line2" | grep -c '·  ·')" "0"
 
 # Empty stdin must not produce a traceback or a stray line.
-out="$(printf '' | bash "$SCRIPT" 2>&1)"
+out="$(printf '' | bash "$SCRIPT" 2>&1)"; rc=$?
 check "empty stdin renders nothing" "$out" ""
+check "empty stdin exits 0" "$rc" "0"
+
+# Whitespace-only stdin holds no JSON value, so jq exits 0 having eval'd
+# nothing at all -- dcc_parse_all "succeeds" without ever assigning the
+# config globals. The render must still degrade to nothing, not abort on
+# an unbound variable.
+out="$(printf '   ' | bash "$SCRIPT" 2>&1)"; rc=$?
+check "whitespace-only stdin renders nothing" "$out" ""
+check "whitespace-only stdin exits 0" "$rc" "0"
 
 # A malformed config still renders, with a visible marker.
 badcfg="$(mktemp)"; printf '{ not json' > "$badcfg"
@@ -64,6 +73,11 @@ raw2="$(printf '%s\n' "$raw" | sed -n 2p)"
 # when line one renders empty, which is exactly the failure worth catching.
 tint="no"; printf '%s' "$raw1" | grep -q $'\033\\[38;5;13m' && tint="yes"
 check "the account tint paints line one" "$tint" "yes"
+# The tint check alone still reads yes in that same disappearance case, since
+# line two's cost chip and separators share the account tint too. Requiring
+# the model chip closes the gap: it only ever appears on line one.
+is_line1="no"; printf '%s' "$raw1" | grep -q 'Opus' && is_line1="yes"
+check "the captured line is actually line one" "$is_line1" "yes"
 # Counted with grep -o. grep -c counts matching *lines*, so it reads 1 no matter
 # how many meters are on the line -- and reads 0 the moment a user's config moves
 # one of them to the other line.
