@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Never use command substitution `$(...)` in the render path.** Every fork costs roughly 10–20ms under MSYS2/Git Bash. Functions return values by assigning documented global out-variables, never by printing for a caller to capture. `$(...)` is allowed in tests and in `install.sh`, which are not latency-sensitive.
+- **Never use command substitution `$(...)` in the render path for a value bash can compute itself.** Every fork costs roughly 10–20ms under MSYS2/Git Bash. Functions return values by assigning documented global out-variables, never by printing for a caller to capture. Prefer parameter expansion over any external command: `${BASH_SOURCE[0]%/*}` not `$(dirname ...)`, `printf -v` not `$(printf ...)`. The only permitted `$(...)` in the render path is capturing the output of the budgeted external calls below — the one `jq` and the two `git` invocations — because their output cannot be obtained any other way. `$(...)` is unrestricted in tests and in `install.sh`, which are not latency-sensitive.
 - Budget: **5 processes per render** — one `jq`, two `git`, and the two `timeout` wrappers around them. Anything that raises this needs justification.
 - Use `printf -v var '%(%s)T' -1` for the current epoch, never `$(date +%s)`.
 - Read stdin with `IFS= read -r -d '' var || true`, never `var=$(cat)`.
@@ -1200,7 +1200,11 @@ Create `plugins/dcc-statusline/scripts/statusline.sh`:
 # in this file may use $(...) -- see the note in lib/color.sh.
 set -uo pipefail
 
-DCC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve our own directory by parameter expansion only. $(cd ... && pwd) would
+# cost two forks on every render, which the process budget does not allow.
+DCC_DIR="${BASH_SOURCE[0]%/*}"
+[ "$DCC_DIR" = "${BASH_SOURCE[0]}" ] && DCC_DIR="."
+
 source "$DCC_DIR/lib/color.sh"
 source "$DCC_DIR/lib/config.sh"
 source "$DCC_DIR/lib/render.sh"
