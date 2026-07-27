@@ -28,6 +28,13 @@
       "description": "Extends superpowers with 16 model and effort tiered implementer subagents, a four-axis task scoring rubric, and a defined escalation ladder.",
       "category": "workflow",
       "keywords": ["superpowers", "subagents", "planning", "effort", "model-selection"]
+    },
+    {
+      "name": "dcc-statusline",
+      "source": "./plugins/dcc-statusline",
+      "description": "A two-line status line: git detail, model and session state, plus context and rate-limit meters colored by usage level, with the line tinted by which Claude account the session belongs to.",
+      "category": "productivity",
+      "keywords": ["statusline", "status-line", "multi-account", "rate-limits", "context-window"]
     }
   ]
 }
