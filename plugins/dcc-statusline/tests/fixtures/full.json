@@ -1,0 +1,17 @@
+{
+  "cwd": "D:/Repositories/Personal/claude-code-plugins/plugins",
+  "session_id": "abc123",
+  "model": { "id": "claude-opus-5", "display_name": "Opus" },
+  "workspace": { "current_dir": "D:/Repositories/Personal/claude-code-plugins/plugins" },
+  "version": "2.1.211",
+  "output_style": { "name": "default" },
+  "cost": { "total_cost_usd": 1.2034 },
+  "context_window": { "total_input_tokens": 94210, "context_window_size": 200000, "used_percentage": 47 },
+  "fast_mode": true,
+  "effort": { "level": "xhigh" },
+  "thinking": { "enabled": true },
+  "rate_limits": {
+    "five_hour": { "used_percentage": 23.5, "resets_at": 1785900000 },
+    "seven_day": { "used_percentage": 41.2, "resets_at": 1786400000 }
+  }
+}

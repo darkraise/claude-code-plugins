@@ -1,0 +1,11 @@
+{
+  "cwd": "D:/Repositories/Personal/claude-code-plugins",
+  "session_id": "def456",
+  "model": { "id": "claude-opus-5", "display_name": "Opus" },
+  "workspace": { "current_dir": "D:/Repositories/Personal/claude-code-plugins" },
+  "output_style": { "name": "default" },
+  "cost": { "total_cost_usd": 0 },
+  "context_window": { "total_input_tokens": 0, "context_window_size": 200000, "used_percentage": null },
+  "fast_mode": false,
+  "thinking": { "enabled": false }
+}

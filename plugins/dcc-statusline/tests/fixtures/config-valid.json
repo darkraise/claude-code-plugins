@@ -1,0 +1,12 @@
+{
+  "lines": [["dir", "model"], ["ctx", "5h"]],
+  "separator": " | ",
+  "meters": {
+    "width": { "ctx": 4 },
+    "ramp": [
+      { "at": 90, "color": "red", "bold": true },
+      { "at": 0, "color": "green" }
+    ]
+  },
+  "accounts": { "~/.claude-alt": { "color": "magenta" } }
+}
