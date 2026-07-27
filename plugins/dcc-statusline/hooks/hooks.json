@@ -1,0 +1,16 @@
+{
+  "description": "Keeps the installed dcc-statusline scripts in sync with the plugin version.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/sync.sh\"",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
