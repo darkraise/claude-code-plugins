@@ -103,4 +103,24 @@ check "7d meter with a multi-day countdown" "$(seg 7d)" "7d [###.....] 41% (5d22
 # --- unknown ------------------------------------------------------------------
 check "an unknown segment name is ignored" "$(seg nosuchsegment)" ""
 
+# --- regression: P_* entirely unset must not abort the dispatcher -------------
+# config.sh, not segments.sh, owns the P_* defaults (see its module-level
+# assignments): dcc_parse_all can legitimately fail without ever setting them,
+# so sourcing config.sh -- not a successful parse -- is what has to stand
+# between that failure and an "unbound variable" abort of the whole status
+# line. Each name runs in its own subshell so a real regression fails that
+# one assertion instead of taking this whole file down with it.
+for name in dir git model effort fast think agent style account ctx cost 5h 7d; do
+  result=$(
+    {
+      unset P_EMAIL P_CWD P_MODEL P_EFFORT P_FAST P_THINK P_AGENT P_STYLE \
+            P_CTX_PCT P_CTX_TOK P_COST P_5H_PCT P_5H_RESET P_7D_PCT P_7D_RESET
+      source "$HERE/../scripts/lib/config.sh"
+      dcc_segment "$name"
+      printf 'rc=%d text=[%s]' "$?" "$DCC_SEG_TEXT"
+    } 2>&1
+  )
+  check "unset P_* leaves the '$name' segment empty, not aborted" "$result" "rc=0 text=[]"
+done
+
 finish

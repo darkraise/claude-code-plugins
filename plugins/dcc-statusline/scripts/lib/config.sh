@@ -63,6 +63,28 @@ DCC_JQ_PROG='
   @sh "P_7D_RESET=\($p.rate_limits.seven_day.resets_at // "")"
 '
 
+# Defaults for every payload global dcc_parse_all can produce. Under `set -u`,
+# a segment reading e.g. $P_MODEL before dcc_parse_all ever runs -- or after
+# it legitimately fails and returns 1 without assigning anything -- would
+# abort the whole non-interactive shell instead of just rendering an empty
+# segment. Declaring them here, the way git.sh pre-declares DCC_GIT_*, closes
+# that gap regardless of whether the parse ever succeeds.
+P_EMAIL=""
+P_CWD=""
+P_MODEL=""
+P_EFFORT=""
+P_FAST=0
+P_THINK=0
+P_AGENT=""
+P_STYLE=""
+P_CTX_PCT=""
+P_CTX_TOK=""
+P_COST=""
+P_5H_PCT=""
+P_5H_RESET=""
+P_7D_PCT=""
+P_7D_RESET=""
+
 dcc_config_path() { # -> DCC_CONFIG_PATH
   DCC_CONFIG_PATH="${DCC_STATUSLINE_CONFIG:-$HOME/.claude/dcc-statusline.json}"
 }
