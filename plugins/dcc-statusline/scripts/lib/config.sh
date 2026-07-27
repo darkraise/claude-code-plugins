@@ -95,6 +95,30 @@ P_5H_RESET=""
 P_7D_PCT=""
 P_7D_RESET=""
 
+# Same gap, and the same fix, for the config-side globals: whitespace-only
+# stdin holds no JSON value, so jq exits 0 having eval'd nothing at all, and
+# dcc_parse_all returns success without assigning a single DCC_* here either.
+#
+# DCC_LINE1 and DCC_LINE2 default to empty rather than to the segment names
+# in DCC_DEFAULT_CONFIG above. Looping over those names would depend on every
+# segment handler happening to treat empty P_* data as "render nothing" --
+# true today, but an accident of the segment implementations, not a
+# guarantee. An empty line list makes the degenerate case render nothing by
+# construction: no segment loop runs, so no segment's behavior matters.
+DCC_LINE1=""
+DCC_LINE2=""
+DCC_SEP="  ·  "
+DCC_W_CTX=10
+DCC_W_5H=8
+DCC_W_7D=8
+DCC_SHOW_ETA=1
+DCC_SHOW_TOKENS=1
+DCC_RAMP="0:green: 50:yellow: 75:orange: 90:red:bold"
+DCC_GLYPH_FILLED="█"
+DCC_GLYPH_EMPTY="░"
+DCC_GLYPH_DIRTY="*"
+DCC_ACCOUNT_COLOR=""
+
 dcc_config_path() { # -> DCC_CONFIG_PATH
   DCC_CONFIG_PATH="${DCC_STATUSLINE_CONFIG:-$HOME/.claude/dcc-statusline.json}"
 }
