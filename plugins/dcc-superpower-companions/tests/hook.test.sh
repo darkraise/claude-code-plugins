@@ -21,6 +21,11 @@ run() { # run <skill-name> - feed a synthetic PreToolUse payload, print stdout
     | bash "$SCRIPT" 2>/dev/null
 }
 
+run_status() { # run_status <skill-name> - feed a synthetic PreToolUse payload, return the script's exit status
+  jq -n --arg s "$1" '{hook_event_name:"PreToolUse",tool_name:"Skill",tool_input:{skill:$s,args:""}}' \
+    | bash "$SCRIPT" >/dev/null 2>&1
+}
+
 for skill in superpowers:writing-plans superpowers:subagent-driven-development; do
   out=$(run "$skill")
   check "$skill: emits valid JSON" \
@@ -41,10 +46,15 @@ check "subagent-driven-development context names the dispatching skill" \
 for skill in superpowers:executing-plans superpowers:brainstorming other:thing ""; do
   label="${skill:-<empty>}"
   check "$label: emits nothing" "$(run "$skill" | wc -c | tr -d ' ')" "0"
+  run_status "$skill"
+  check "$label: exits 0" "$?" "0"
 done
 
 check "malformed stdin exits 0 and emits nothing" \
   "$(printf 'not json' | bash "$SCRIPT" 2>/dev/null | wc -c | tr -d ' ')" "0"
+
+printf 'not json' | bash "$SCRIPT" >/dev/null 2>&1
+check "malformed stdin: exits 0" "$?" "0"
 
 # hooks.json wiring
 HOOKS="$HERE/../hooks/hooks.json"
