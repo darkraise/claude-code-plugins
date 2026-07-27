@@ -7,7 +7,11 @@
 # never ran the install command should not get files created behind their back.
 set -uo pipefail
 
-DCC_SRC="${CLAUDE_PLUGIN_ROOT:-}/scripts"
+# Without CLAUDE_PLUGIN_ROOT the source path would read "/scripts", which is a
+# real absolute path -- on the wrong machine it could exist and be copied from.
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] || exit 0
+
+DCC_SRC="$CLAUDE_PLUGIN_ROOT/scripts"
 DCC_DEST="${DCC_STATUSLINE_HOME:-${DCC_FAKE_HOME:-$HOME}/.claude/dcc-statusline}"
 
 [ -d "$DCC_SRC" ]  || exit 0

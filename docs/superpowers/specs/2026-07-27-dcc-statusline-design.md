@@ -287,8 +287,10 @@ Dedicated assertions:
 - A failing segment produces no doubled separator.
 - Tint applies to non-meter segments and never to meters.
 - Countdown formatting across the day, hour, minute, and elapsed cases.
-- `install` followed by `uninstall` leaves `settings.json` byte-identical apart
-  from the `statusLine` key.
+- `install` followed by `uninstall` leaves `settings.json` semantically identical
+  apart from the `statusLine` key. Byte equality is not offered: the edit runs
+  through `jq --indent 2`, which rewrites the whole document, so a four-space
+  file comes back two-space and inline arrays are expanded.
 
 ## Out of scope
 

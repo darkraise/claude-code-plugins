@@ -98,7 +98,10 @@ dcc_uninstall_one "$fake/.claude"
 after="$(jq -S . "$fake/.claude/settings.json")"
 check "uninstall removes the entry" \
   "$(jq -r 'has("statusLine")' "$fake/.claude/settings.json")" "false"
-check "install then uninstall restores the content" \
+# Semantic equality, not byte equality: jq --indent 2 rewrites the whole file, so
+# a 4-space original comes back 2-space and inline arrays are expanded. Comparing
+# through jq -S is therefore the strongest claim this can honestly make.
+check "install then uninstall restores the content semantically" \
   "$after" "$(printf '%s' "$before" | jq -S .)"
 
 # --- a missing settings.json is created ---------------------------------------
@@ -127,6 +130,73 @@ check "sync replaces the scripts too" "$(cat "$DCC_STATUSLINE_HOME/statusline.sh
 printf 'echo touched\n' > "$DCC_STATUSLINE_HOME/statusline.sh"
 CLAUDE_PLUGIN_ROOT="$src" bash "$HERE/../scripts/sync.sh"
 check "sync is a no-op when versions match" "$(cat "$DCC_STATUSLINE_HOME/statusline.sh")" "echo touched"
+
+# An unset CLAUDE_PLUGIN_ROOT would leave the source path as the bare "/scripts",
+# a real absolute path that could exist and be copied from.
+check "sync exits quietly without CLAUDE_PLUGIN_ROOT" \
+  "$(unset CLAUDE_PLUGIN_ROOT; bash "$HERE/../scripts/sync.sh" 2>&1; printf 'rc=%d' "$?")" \
+  "rc=0"
+
+# --- a home directory containing a space --------------------------------------
+# Windows home directories routinely contain one. Unquoted, the path list would
+# word-split into fragments naming no directory at all.
+spacey="$fake/home with space"
+mkdir -p "$spacey/.claude"
+printf '{"permissions":{"allow":[]}}\n' > "$spacey/.claude/settings.json"
+got_spacey="$(
+  unset CLAUDE_CONFIG_DIR
+  export DCC_FAKE_HOME="$spacey"
+  export DCC_STATUSLINE_HOME="$spacey/.claude/dcc-statusline"
+  bash "$HERE/../scripts/install.sh" install 2>&1
+)"
+check "install handles a home directory containing a space" \
+  "$got_spacey" "installed: $spacey/.claude"
+check "install wrote the entry into the spaced directory" \
+  "$(jq -r '.statusLine.type' "$spacey/.claude/settings.json")" "command"
+
+got_spacey="$(
+  unset CLAUDE_CONFIG_DIR
+  export DCC_FAKE_HOME="$spacey"
+  export DCC_STATUSLINE_HOME="$spacey/.claude/dcc-statusline"
+  bash "$HERE/../scripts/install.sh" uninstall 2>&1
+)"
+check "uninstall handles a home directory containing a space" \
+  "$got_spacey" "uninstalled: $spacey/.claude"
+
+# --- doctor -------------------------------------------------------------------
+# Every other doctor check can pass while the tint never applies and the render
+# is broken, which is how a config key nobody could match survived to release.
+printf '{"accounts":{"~/.claude":{"color":"magenta"}}}\n' > "$fake/.claude/dcc-statusline.json"
+doctor_run() { # doctor_run <config-dir-or-empty>
+  local ccd="$1"
+  (
+    unset CLAUDE_CONFIG_DIR
+    [ -n "$ccd" ] && export CLAUDE_CONFIG_DIR="$ccd"
+    export HOME="$fake"
+    export DCC_FAKE_HOME="$fake"
+    export DCC_STATUSLINE_HOME="$fake/.claude/dcc-statusline"
+    bash "$HERE/../scripts/install.sh" doctor 2>&1
+  )
+}
+
+doc="$(doctor_run "")"
+check "doctor confirms the active account has a tint entry" \
+  "$(printf '%s\n' "$doc" | grep -c 'ok   - ~/.claude has an accounts entry')" "1"
+check "doctor renders a fixture payload" \
+  "$(printf '%s\n' "$doc" | grep -c 'ok   - a fixture render succeeds')" "1"
+
+doc="$(doctor_run "$fake/.claude-alt")"
+check "doctor names an account that has no tint entry" \
+  "$(printf '%s\n' "$doc" | grep -c 'warn - ~/.claude-alt has no accounts entry')" "1"
+
+# --- version agreement --------------------------------------------------------
+# The SessionStart sync hook fires on a difference between the plugin's VERSION
+# and the installed copy's. If VERSION drifts from the manifest the plugin gets
+# a new release that the hook never notices, which is the failure it exists to
+# prevent.
+check "scripts/VERSION matches the plugin manifest version" \
+  "$(cat "$HERE/../scripts/VERSION")" \
+  "$(jq -r '.version' "$HERE/../.claude-plugin/plugin.json")"
 
 rm -rf "$fake" "$src"
 finish

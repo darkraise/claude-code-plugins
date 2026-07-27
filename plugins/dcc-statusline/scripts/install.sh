@@ -10,6 +10,11 @@ set -uo pipefail
 DCC_SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DCC_COMMAND="bash ~/.claude/dcc-statusline/statusline.sh"
 
+# dcc_doctor resolves the active account key exactly the way the render path
+# does, so a mismatch between the two can never be what the diagnostic misses.
+source "$DCC_SRC_DIR/lib/path.sh"
+source "$DCC_SRC_DIR/lib/config.sh"
+
 _dcc_paths() { # -> DCC_HOME_DIR, DCC_DEST -- resolved fresh on every call, never
                # cached at source time, because a caller (tests, in particular)
                # may set DCC_FAKE_HOME / DCC_STATUSLINE_HOME after sourcing this
@@ -108,7 +113,8 @@ dcc_targets() { # dcc_targets <--all|"">
 
 dcc_doctor() {
   _dcc_paths
-  local rc=0 d
+  local rc=0 d cfg key probe rendered
+  cfg="$DCC_HOME_DIR/.claude/dcc-statusline.json"
   command -v jq  >/dev/null 2>&1 && printf 'ok   - jq is on PATH\n'  || { printf 'FAIL - jq is not on PATH\n';  rc=1; }
   command -v git >/dev/null 2>&1 && printf 'ok   - git is on PATH\n' || { printf 'warn - git is not on PATH; the git segment will be hidden\n'; }
   if [ -f "$DCC_DEST/statusline.sh" ]; then
@@ -121,8 +127,8 @@ dcc_doctor() {
   else
     printf 'FAIL - scripts are not installed; run: /dcc-statusline install\n'; rc=1
   fi
-  if [ -f "$DCC_HOME_DIR/.claude/dcc-statusline.json" ]; then
-    if jq -e . "$DCC_HOME_DIR/.claude/dcc-statusline.json" >/dev/null 2>&1; then
+  if [ -f "$cfg" ]; then
+    if jq -e . "$cfg" >/dev/null 2>&1; then
       printf 'ok   - config parses\n'
     else
       printf 'FAIL - config is not valid JSON\n'; rc=1
@@ -130,26 +136,57 @@ dcc_doctor() {
   else
     printf 'ok   - no config file; built-in defaults apply\n'
   fi
-  for d in $(dcc_account_dirs); do
+
+  # Whether the active account has a matching accounts{} entry. A key that never
+  # matches costs the tint and nothing else, so it produces no error anywhere --
+  # printing the resolved key is the only way a user finds out.
+  dcc_config_key "$DCC_HOME_DIR"; key="$DCC_ACCT_KEY"
+  if [ ! -f "$cfg" ]; then
+    printf 'warn - no config file, so no tint is defined for %s\n' "$key"
+  elif jq -e --arg k "$key" '.accounts[$k].color // empty' "$cfg" >/dev/null 2>&1; then
+    printf 'ok   - %s has an accounts entry\n' "$key"
+  else
+    printf 'warn - %s has no accounts entry; this account renders untinted\n' "$key"
+  fi
+
+  # Every check above can pass while the render itself is broken, so run one.
+  # Built-in defaults deliberately, since the user config was just checked
+  # separately and a config that hides the model segment is not a render fault.
+  probe='{"model":{"display_name":"dcc-probe"},"cost":{"total_cost_usd":0}}'
+  # Matched with a case statement rather than piping into grep -q: -q closes the
+  # pipe on its first match, and under pipefail the resulting SIGPIPE in the
+  # renderer would be reported as a failed render.
+  rendered="$(printf '%s' "$probe" \
+    | DCC_STATUSLINE_CONFIG=/dev/null bash "$DCC_SRC_DIR/statusline.sh" 2>/dev/null)"
+  case "$rendered" in
+    *dcc-probe*) printf 'ok   - a fixture render succeeds\n' ;;
+    *)           printf 'FAIL - a fixture render produced no usable output\n'; rc=1 ;;
+  esac
+
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
     if jq -e '.statusLine' "$d/settings.json" >/dev/null 2>&1; then
       printf 'ok   - installed in %s\n' "$d"
     else
       printf 'warn - not installed in %s\n' "$d"
     fi
-  done
+  done < <(dcc_account_dirs)
   return "$rc"
 }
 
 dcc_status() {
   _dcc_paths
   local d
-  for d in $(dcc_account_dirs); do
+  # Read line by line: a home directory containing a space would word-split an
+  # unquoted command substitution into fragments that name no directory.
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
     if jq -e '.statusLine' "$d/settings.json" >/dev/null 2>&1; then
       printf '%s: installed\n' "$d"
     else
       printf '%s: not installed\n' "$d"
     fi
-  done
+  done < <(dcc_account_dirs)
   [ -f "$DCC_DEST/VERSION" ] && printf 'installed script version: %s\n' "$(cat "$DCC_DEST/VERSION")"
   printf 'plugin script version: %s\n' "$(cat "$DCC_SRC_DIR/VERSION")"
 }
@@ -160,14 +197,16 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     install)
       dcc_copy_scripts || { printf 'dcc-statusline: could not copy scripts to %s\n' "$DCC_DEST"; exit 1; }
       dcc_seed_config
-      for d in $(dcc_targets "${2:-}"); do
+      while IFS= read -r d; do
+        [ -n "$d" ] || continue
         dcc_install_one "$d" && printf 'installed: %s\n' "$d" || printf 'failed: %s\n' "$d"
-      done
+      done < <(dcc_targets "${2:-}")
       ;;
     uninstall)
-      for d in $(dcc_targets "${2:-}"); do
+      while IFS= read -r d; do
+        [ -n "$d" ] || continue
         dcc_uninstall_one "$d" && printf 'uninstalled: %s\n' "$d" || printf 'failed: %s\n' "$d"
-      done
+      done < <(dcc_targets "${2:-}")
       ;;
     status) dcc_status ;;
     doctor) dcc_doctor ;;
