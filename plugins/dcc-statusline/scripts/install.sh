@@ -95,6 +95,12 @@ dcc_targets() { # dcc_targets <--all|"">
   _dcc_paths
   if [ "${1:-}" = "--all" ]; then
     dcc_account_dirs
+  elif [ -n "${DCC_FAKE_HOME:-}" ]; then
+    # DCC_FAKE_HOME is a test-only isolation switch. Once set, it must be
+    # authoritative: an ambient CLAUDE_CONFIG_DIR from the caller's real shell
+    # (routine for anyone running a non-default account) must not be able to
+    # redirect an isolated run onto a real account.
+    printf '%s\n' "$DCC_HOME_DIR/.claude"
   else
     printf '%s\n' "${CLAUDE_CONFIG_DIR:-$DCC_HOME_DIR/.claude}"
   fi

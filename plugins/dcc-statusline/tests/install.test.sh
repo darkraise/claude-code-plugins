@@ -64,6 +64,23 @@ got_calltime="$(
 check "discovery resolves the fake home at call time, not source time" \
   "$got_calltime" ".claude .claude-alt "
 
+# Regression guard: once DCC_FAKE_HOME is set, an ambient CLAUDE_CONFIG_DIR
+# (routine on a machine with more than one account -- and this machine's own
+# shell may have one set right now) must not be able to redirect the
+# single-account install target outside the fake home. The decoy path is a
+# throwaway scratch dir, deliberately never a real account directory, so this
+# assertion cannot touch real configuration even if the code under test were
+# still broken. Scoped to a subshell for the same reason as the check above:
+# an internal failure is a mismatched string, not a crashed test file.
+decoy="$(mktemp -d)"
+got_target="$(
+  export CLAUDE_CONFIG_DIR="$decoy"
+  dcc_targets
+)"
+rm -rf "$decoy"
+check "the install target ignores CLAUDE_CONFIG_DIR once DCC_FAKE_HOME is set" \
+  "$got_target" "$fake/.claude"
+
 # --- install ------------------------------------------------------------------
 dcc_install_one "$fake/.claude-alt"
 check "install writes the command" \
