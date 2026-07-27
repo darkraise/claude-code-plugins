@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Rendering primitives: the four-stop ramp, bar fill with its clamps, compact
+# countdowns, and separator-aware joining.
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/lib.sh"
+source "$HERE/../scripts/lib/color.sh"
+source "$HERE/../scripts/lib/render.sh"
+
+DCC_RAMP="0:green: 50:yellow: 75:orange: 90:red:bold"
+DCC_GLYPH_FILLED="#"
+DCC_GLYPH_EMPTY="."
+DCC_SEP=" | "
+DCC_ACCOUNT_COLOR=""
+
+# --- ramp boundaries ----------------------------------------------------------
+for pair in "0 green" "49 green" "50 yellow" "74 yellow" "75 orange" "89 orange" "90 red" "100 red"; do
+  set -- $pair
+  dcc_ramp "$1"
+  check "ramp at $1% is $2" "$DCC_RAMP_COLOR" "$2"
+done
+dcc_ramp 90;  check "the top ramp stop is bold" "$DCC_RAMP_BOLD" "bold"
+dcc_ramp 89;  check "lower ramp stops are not bold" "$DCC_RAMP_BOLD" ""
+dcc_ramp "";  check "empty percentage yields no ramp color" "$DCC_RAMP_COLOR" ""
+
+# --- bar fill and clamps ------------------------------------------------------
+dcc_bar 0 10;   check "0% is an empty bar"                 "$DCC_BAR" "[..........]"
+dcc_bar 1 10;   check "1% still shows one filled cell"     "$DCC_BAR" "[#.........]"
+dcc_bar 47 10;  check "47% rounds to five cells"           "$DCC_BAR" "[#####.....]"
+dcc_bar 99 10;  check "99% still shows one empty cell"     "$DCC_BAR" "[#########.]"
+dcc_bar 100 10; check "100% is a full bar"                 "$DCC_BAR" "[##########]"
+dcc_bar 50 8;   check "width is honored"                   "$DCC_BAR" "[####....]"
+dcc_bar 50 0;   check "zero width yields no bar"           "$DCC_BAR" ""
+dcc_bar "" 10;  check "empty percentage yields no bar"     "$DCC_BAR" ""
+
+# --- countdown formatting -----------------------------------------------------
+dcc_eta 500400; check "multi-day countdown"      "$DCC_ETA" "5d19h"
+dcc_eta 15180;  check "hours and minutes"        "$DCC_ETA" "4h13m"
+dcc_eta 2700;   check "minutes only"             "$DCC_ETA" "45m"
+dcc_eta 0;      check "zero reads as now"        "$DCC_ETA" "now"
+dcc_eta -60;    check "elapsed reads as now"     "$DCC_ETA" "now"
+dcc_eta "";     check "empty seconds yields nothing" "$DCC_ETA" ""
+
+# --- joining ------------------------------------------------------------------
+dcc_join_reset
+dcc_join_add "" "one"
+dcc_join_add "" "two"
+check "segments are joined with the separator" "$(printf '%s' "$DCC_JOINED" | strip_ansi)" "one | two"
+
+dcc_join_reset
+dcc_join_add "" "one"
+dcc_join_add "" ""
+dcc_join_add "" "three"
+check "an empty segment leaves no doubled separator" \
+  "$(printf '%s' "$DCC_JOINED" | strip_ansi)" "one | three"
+
+dcc_join_reset
+dcc_join_add "" ""
+check "an all-empty line renders as nothing" "$DCC_JOINED" ""
+
+DCC_ACCOUNT_COLOR="magenta"
+dcc_join_reset
+dcc_join_add "" "tinted"
+check "an empty colorspec takes the account tint" "$DCC_JOINED" $'\033[38;5;13mtinted\033[0m'
+
+dcc_join_reset
+dcc_join_add "red bold" "warn"
+check "an explicit colorspec overrides the tint" "$DCC_JOINED" $'\033[1;38;5;9mwarn\033[0m'
+
+finish
