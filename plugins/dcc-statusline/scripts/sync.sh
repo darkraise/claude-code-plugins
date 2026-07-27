@@ -7,11 +7,11 @@
 # never ran the install command should not get files created behind their back.
 set -uo pipefail
 
-SRC="${CLAUDE_PLUGIN_ROOT:-}/scripts"
-DEST="${DCC_STATUSLINE_HOME:-${DCC_FAKE_HOME:-$HOME}/.claude/dcc-statusline}"
+DCC_SRC="${CLAUDE_PLUGIN_ROOT:-}/scripts"
+DCC_DEST="${DCC_STATUSLINE_HOME:-${DCC_FAKE_HOME:-$HOME}/.claude/dcc-statusline}"
 
-[ -d "$SRC" ]  || exit 0
-[ -d "$DEST" ] || exit 0
-cmp -s "$SRC/VERSION" "$DEST/VERSION" && exit 0
-cp -R "$SRC/." "$DEST/" 2>/dev/null
+[ -d "$DCC_SRC" ]  || exit 0
+[ -d "$DCC_DEST" ] || exit 0
+cmp -s "$DCC_SRC/VERSION" "$DCC_DEST/VERSION" && exit 0
+cp -R "$DCC_SRC/." "$DCC_DEST/" 2>/dev/null
 exit 0

@@ -43,6 +43,27 @@ while IFS= read -r d; do
 done <<<"$(dcc_account_dirs)"
 check "discovery never returns a path outside the fake home" "$outside" "0"
 
+# The two checks above pass even if DCC_HOME_DIR/DCC_DEST were cached at source
+# time, because this test file happens to export the fake-home vars before
+# sourcing install.sh. That ordering can't distinguish call-time resolution
+# from source-time caching, so it proves nothing about which one the code
+# actually does. This one forces the distinction: source with the fake-home
+# vars still unset, THEN set them, THEN call. Source-time caching would have
+# already captured the (unset) fallback to the real $HOME before the export
+# ever runs; only call-time resolution can still pick up the export. Runs in
+# a command-substitution subshell so an internal failure (or a stray "unbound
+# variable" abort under set -u) is captured as a mismatched string rather than
+# taking down the rest of this test file.
+got_calltime="$(
+  unset DCC_FAKE_HOME DCC_STATUSLINE_HOME
+  source "$HERE/../scripts/install.sh"
+  export DCC_FAKE_HOME="$fake"
+  export DCC_STATUSLINE_HOME="$fake/.claude/dcc-statusline"
+  dcc_account_dirs | sed "s#^$fake/##" | sort | tr '\n' ' '
+)"
+check "discovery resolves the fake home at call time, not source time" \
+  "$got_calltime" ".claude .claude-alt "
+
 # --- install ------------------------------------------------------------------
 dcc_install_one "$fake/.claude-alt"
 check "install writes the command" \
