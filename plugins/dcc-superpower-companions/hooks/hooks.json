@@ -1,0 +1,17 @@
+{
+  "description": "Adds implementer-assignment context when superpowers writes or executes a plan.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/tier-nudge.sh\"",
+            "async": false
+          }
+        ]
+      }
+    ]
+  }
+}
