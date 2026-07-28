@@ -49,6 +49,11 @@ results verbatim. If `jq` is missing, say the status line cannot run without it
 and that on Windows it comes from a separate `jq` install alongside Git for
 Windows. If the config fails to parse, offer to show the file and fix it.
 
+It also reports the detected icon mode and icon cell width, printed as
+`icons: nerd at 2 cell(s)`. Read that line when glyphs render as empty boxes
+(the mode should be `unicode`) or when the box's right edge looks ragged (the
+width is likely wrong — set `icons.width` in the config to correct it).
+
 ## Preview
 To show the user what their line looks like right now, pipe a payload through the
 installed script:

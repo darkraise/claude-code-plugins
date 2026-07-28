@@ -4,15 +4,28 @@ A two-line Claude Code status line, built for machines running several Claude
 accounts side by side.
 
 ```
-plugins/dcc-statusline  main* ↑2↓1 ●3 ○1 ?2  ·  Opus  ·  xhigh  ·  fast  ·  you@example.com
-ctx [█████░░░░░] 47% (94k)  ·  $1.20  ·  5h [██░░░░░░] 23% (4h13m)  ·  7d [████░░░░] 41% (5d19h)
+╭─  you@example.com ───────────────────────────────────────────────────────╮
+│  plugins/dcc-statusline  ·   main* ↑2 ?2  ·   Opus  ·  xhigh  ·    │
+│  ctx ▰▰▰▰▰▱▱▱▱▱ 47% · 94k  ·   1.20  ·   5h ▰▰▱▱▱▱▱▱ 23% · 3h40m     │
+╰────────────────────────────────────────────────────────────────────────────╯
 ```
 
-Color follows one rule: the meters take the usage ramp, and everything else takes
-the color you assign to the account. So the ramp paints `ctx`, `5h`, and `7d` by
-the reading itself — green below 50%, yellow to 74%, orange to 89%, then red and
-bold at 90% and above — while every other chip and every separator on both lines
-carries the account tint, making a terminal's identity obvious at a glance.
+Colour follows two rules. The frame takes the colour you assign to the account,
+so a terminal is identifiable from its border alone. Inside the frame, colour
+says what kind of thing a section is — blue for the path, magenta for the
+branch, cyan for the model, violet for cost — while the meters keep the usage
+ramp: green below 50%, yellow to 74%, orange to 89%, then red and bold at 90%
+and above.
+
+Within every section, three weights separate what leads from what supports. The
+leaf directory, branch name, model and percentage are bold; icons, effort and
+meter labels are plain; the parent path, separators, git counters and units are
+dimmed.
+
+The frame needs to know the terminal width, which Claude Code supplies in
+`COLUMNS`. When that is missing or the terminal is narrower than 48 columns, the
+status line falls back to two unframed lines rather than drawing a box it cannot
+close.
 
 ## Requirements
 
@@ -52,12 +65,33 @@ defaults.
 | `meters.ramp` | Color stops, each `{ "at": <pct>, "color": <name>, "bold": <bool> }` |
 | `accounts` | Config directory in `~/...` form to `{ "color": <name> }` |
 | `glyphs` | `filled`, `empty`, and `dirty` characters |
+| `frame` | `auto`, `box`, or `none`; `auto` frames when `COLUMNS` allows |
+| `icons.mode` | `auto`, `nerd`, or `unicode`; `auto` uses the detected value |
+| `icons.width` | Cells an icon occupies, `1` or `2`; omit to use detection |
+| `palette` | Section name to colour: `dir`, `git`, `model`, `effort`, `fast`, `cost`, `mute` |
 
-Segment names: `dir`, `git`, `model`, `effort`, `fast`, `think`, `agent`,
-`style`, `account`, `ctx`, `cost`, `5h`, `7d`. Unknown names are ignored.
+Segment names: `dir`, `git`, `model`, `effort`, `fast`, `agent`, `style`,
+`account`, `ctx`, `cost`, `5h`, `7d`. Unknown names are ignored.
 
 Colors: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`,
 `orange`, `gray`, or a 256-color number.
+
+## Icons
+
+Nerd Font glyphs are used when a Nerd Font is available and words are used when
+it is not. Detection runs at install time and again whenever the plugin updates,
+never during a render — the render path budgets five processes and cannot afford
+to probe fonts.
+
+The probe reads the terminal's own configured font face first, because that
+names the font actually doing the rendering. Only when that cannot be read does
+it fall back to scanning installed fonts, since a Nerd Font being installed does
+not mean your terminal uses it.
+
+Icon width matters: a font named "Nerd Font" draws icons at two cells, while its
+"Nerd Font Mono" variant draws them at one. Getting this wrong shifts the box's
+right edge by one cell per icon. Set `icons.width` if the detected value is
+wrong, and run `/dcc-statusline doctor` to see what was detected.
 
 ## Design notes
 
