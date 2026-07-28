@@ -13,50 +13,28 @@
       "source": "./plugins/example-plugin",
       "description": "A minimal template plugin. Clone it to start a new plugin.",
       "category": "template",
-      "keywords": [
-        "example",
-        "template",
-        "starter"
-      ]
+      "keywords": ["example", "template", "starter"]
     },
     {
       "name": "telegram-notify",
       "source": "./plugins/telegram-notify",
       "description": "Push a Telegram message when a Claude Code session finishes a turn, ends on a question, or needs your attention. Cross-platform, multi-account aware, optional LLM summaries.",
       "category": "productivity",
-      "keywords": [
-        "telegram",
-        "notifications",
-        "hooks",
-        "push",
-        "mobile"
-      ]
+      "keywords": ["telegram", "notifications", "hooks", "push", "mobile"]
     },
     {
       "name": "dcc-superpower-companions",
       "source": "./plugins/dcc-superpower-companions",
       "description": "Extends superpowers with 16 model and effort tiered implementer subagents, a four-axis task scoring rubric, and a defined escalation ladder.",
       "category": "workflow",
-      "keywords": [
-        "superpowers",
-        "subagents",
-        "planning",
-        "effort",
-        "model-selection"
-      ]
+      "keywords": ["superpowers", "subagents", "planning", "effort", "model-selection"]
     },
     {
       "name": "dcc-statusline",
       "source": "./plugins/dcc-statusline",
       "description": "A Claude Code status line: git detail, model and session state, plus context and rate-limit meters colored by usage level, framed in the color of the Claude account the session belongs to.",
       "category": "productivity",
-      "keywords": [
-        "statusline",
-        "status-line",
-        "multi-account",
-        "rate-limits",
-        "context-window"
-      ]
+      "keywords": ["statusline", "status-line", "multi-account", "rate-limits", "context-window"]
     }
   ]
 }
