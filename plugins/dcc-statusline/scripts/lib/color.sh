@@ -35,7 +35,7 @@ dcc_color() { # dcc_color <name> [weight: ''|bold|dim] -> DCC_C
   esac
 }
 
-dcc_paint() { # dcc_paint <text> <color-name> [bold] -> DCC_PAINTED
+dcc_paint() { # dcc_paint <text> <color-name> [weight: ''|bold|dim] -> DCC_PAINTED
   dcc_color "${2:-}" "${3:-}"
   if [ -z "$DCC_C" ]; then DCC_PAINTED="$1"; else DCC_PAINTED="$DCC_C$1$DCC_R"; fi
 }

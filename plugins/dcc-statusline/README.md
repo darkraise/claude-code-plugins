@@ -18,14 +18,20 @@ ramp: green below 50%, yellow to 74%, orange to 89%, then red and bold at 90%
 and above.
 
 Within every section, three weights separate what leads from what supports. The
-leaf directory, branch name, model and percentage are bold; icons, effort and
-meter labels are plain; the parent path, separators, git counters and units are
-dimmed.
+leaf directory, branch name, model, percentage, and cost figure are bold; icons,
+effort and meter labels are plain; the parent path, separators, git counters and
+units are dimmed.
 
 The frame needs to know the terminal width, which Claude Code supplies in
 `COLUMNS`. When that is missing, non-numeric, or narrower than 48 columns, the
 status line falls back to two unframed lines rather than drawing a box it cannot
 close.
+
+Text pulled from the payload — the directory, branch, model, and email — is
+measured in characters, not terminal cells. ASCII and the plugin's own glyphs
+are measured correctly, but a directory or branch name containing double-width
+characters such as East Asian text or emoji will make the frame's right edge
+sit short. Setting `frame` to `none` avoids it.
 
 ## Requirements
 
@@ -65,7 +71,7 @@ defaults.
 | `meters.ramp` | Color stops, each `{ "at": <pct>, "color": <name>, "bold": <bool> }` |
 | `accounts` | Config directory in `~/...` form to `{ "color": <name> }` |
 | `glyphs` | `filled`, `empty`, and `dirty` characters |
-| `frame` | `auto`, `box`, or `none`; `auto` frames when `COLUMNS` allows |
+| `frame` | `auto`, `box`, or `none`; `box` currently behaves the same as `auto`, framing when `COLUMNS` allows |
 | `icons.mode` | `auto`, `nerd`, or `unicode`; `auto` uses the detected value |
 | `icons.width` | Cells an icon occupies, `1` or `2`; omit to use detection |
 | `palette` | Section name to colour: `dir`, `git`, `model`, `effort`, `fast`, `cost`, `mute` |
