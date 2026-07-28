@@ -174,7 +174,7 @@ DCC_DEFAULT_CONFIG='{
     ["dir","git","model","effort","fast","agent","style","account"],
     ["ctx","cost","5h","7d"]
   ],
-  "separator": "  ·  ",
+  "separator": "  \u00b7  ",
   "frame": "auto",
   "icons": { "mode": "auto", "width": 0 },
   "palette": {
@@ -193,13 +193,15 @@ DCC_DEFAULT_CONFIG='{
     ]
   },
   "accounts": {},
-  "glyphs": {"filled":"▰","empty":"▱","dirty":"*"}
+  "glyphs": {"filled":"\u25b0","empty":"\u25b1","dirty":"*"}
 }'
 ```
 
-The two glyph characters above are the only non-ASCII in this file and are
-already present in the existing default, so they are edited in place rather than
-constructed.
+Every non-ASCII character in this blob is written as a JSON `\uXXXX` escape.
+`jq` decodes them itself, so `config.sh` stays pure ASCII without any
+`printf -v` assembly — the Global Constraint holds here with no exception.
+Note this also changes the existing `separator` default, which previously held
+a literal middle dot.
 
 Add to `DCC_JQ_PROG`, after the `DCC_SEP` line:
 
@@ -231,12 +233,16 @@ DCC_P_COST="141"
 DCC_P_MUTE="gray"
 ```
 
-Change the two glyph fallbacks to match the new defaults:
+Change the glyph and separator fallbacks to match the new defaults. These are
+shell assignments rather than JSON, so they use octal escapes:
 
 ```bash
-printf -v DCC_GLYPH_FILLED '\342\226\260'
-printf -v DCC_GLYPH_EMPTY  '\342\226\261'
+printf -v DCC_GLYPH_FILLED '\342\226\260'   # U+25B0
+printf -v DCC_GLYPH_EMPTY  '\342\226\261'   # U+25B1
+printf -v DCC_SEP          '  \302\267  '   # U+00B7 middle dot
 ```
+
+Delete the literal `DCC_SEP="  ·  "` assignment these replace.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1129,9 +1135,40 @@ git commit -m "feat(statusline): paint segments with semantic colour"
   - `dcc_frame_top <title> <icon> <icon-cells>` — sets `DCC_FRAME_OUT`.
   - `dcc_frame_row <built-line> <cells>` — sets `DCC_FRAME_OUT`.
   - `dcc_frame_bottom` — sets `DCC_FRAME_OUT`.
-  - `dcc_cells <string>` — test-only helper setting `DCC_CELLS`; strips SGR sequences and counts private-use characters as `DCC_ICON_W`.
+  - `dcc_cells <string>` in `tests/lib.sh` — measures a rendered row in cells by stripping SGR sequences and counting private-use characters as `DCC_ICON_W`. It lives with the test helpers, not in `frame.sh`: the render path sources `frame.sh` on every render and must not carry a function only tests call.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Add the measuring helper to the shared test library**
+
+Append to `plugins/dcc-statusline/tests/lib.sh`:
+
+```bash
+# Test-only: measures a rendered row in terminal cells. Strips SGR sequences,
+# then counts private-use characters as DCC_ICON_W cells and everything else as
+# one. Callers must be running under a UTF-8 locale, or bash slices bytes.
+DCC_TEST_ESC=$'\033'
+dcc_cells() { # dcc_cells <string> -> DCC_CELLS
+  local s="${1:-}" ch cp n=0
+  DCC_CELLS=0
+  while [ -n "$s" ]; do
+    # A case pattern cannot be used here: "$DCC_TEST_ESC[" would open a bracket
+    # expression rather than match an escape introducer literally.
+    if [ "${s:0:2}" = "$DCC_TEST_ESC[" ]; then
+      s="${s#*m}"
+    else
+      ch="${s:0:1}"; s="${s:1}"
+      printf -v cp '%d' "'$ch"
+      if [ "$cp" -ge 57344 ] && [ "$cp" -le 63743 ]; then
+        n=$(( n + ${DCC_ICON_W:-1} ))
+      else
+        n=$(( n + 1 ))
+      fi
+    fi
+  done
+  DCC_CELLS="$n"
+}
+```
+
+- [ ] **Step 2: Write the failing test**
 
 Create `plugins/dcc-statusline/tests/frame.test.sh`:
 
@@ -1222,12 +1259,12 @@ check "an over-long title still yields a 48-cell rule" "$DCC_CELLS" "48"
 finish
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 3: Run test to verify it fails**
 
 Run: `bash plugins/dcc-statusline/tests/frame.test.sh`
 Expected: FAIL — `scripts/lib/frame.sh: No such file or directory`
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **Step 4: Write minimal implementation**
 
 Create `plugins/dcc-statusline/scripts/lib/frame.sh`:
 
@@ -1328,40 +1365,17 @@ dcc_frame_bottom() { # -> DCC_FRAME_OUT
   dcc_paint "$DCC_BOX_BL$DCC_REP$DCC_BOX_BR" "$tint"
   DCC_FRAME_OUT="$DCC_PAINTED"
 }
-
-dcc_cells() { # dcc_cells <string> -> DCC_CELLS
-  # Test support. Strips SGR sequences, then counts private-use characters as
-  # DCC_ICON_W cells and everything else as one.
-  local s="${1:-}" ch cp n=0
-  DCC_CELLS=0
-  while [ -n "$s" ]; do
-    # A case pattern cannot be used here: "$DCC_ESC[" would open a bracket
-    # expression rather than match an escape introducer literally.
-    if [ "${s:0:2}" = "$DCC_ESC[" ]; then
-      s="${s#*m}"
-    else
-      ch="${s:0:1}"; s="${s:1}"
-      printf -v cp '%d' "'$ch"
-      if [ "$cp" -ge 57344 ] && [ "$cp" -le 63743 ]; then
-        n=$(( n + ${DCC_ICON_W:-1} ))
-      else
-        n=$(( n + 1 ))
-      fi
-    fi
-  done
-  DCC_CELLS="$n"
-}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 5: Run test to verify it passes**
 
 Run: `bash plugins/dcc-statusline/tests/frame.test.sh`
 Expected: PASS, 0 failed
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add plugins/dcc-statusline/scripts/lib/frame.sh plugins/dcc-statusline/tests/frame.test.sh
+git add plugins/dcc-statusline/scripts/lib/frame.sh plugins/dcc-statusline/tests/frame.test.sh plugins/dcc-statusline/tests/lib.sh
 git commit -m "feat(statusline): add box frame with width accounting"
 ```
 
@@ -1384,6 +1398,9 @@ In `plugins/dcc-statusline/tests/e2e.test.sh`, add below the existing exports:
 ```bash
 export DCC_ICONS=unicode
 export COLUMNS=""
+# dcc_cells slices characters, which needs a UTF-8 locale in the test shell too;
+# the script sets its own, but that does not reach this process.
+export LC_ALL=C.UTF-8
 ```
 
 Replace the two assertions at lines 28-31 with:
@@ -1404,8 +1421,6 @@ Add a framed block before `finish`:
 out="$(COLUMNS=100 bash "$SCRIPT" < "$F/full.json")"
 check "a framed render prints four rows" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "4"
 
-source "$HERE/../scripts/lib/color.sh"
-source "$HERE/../scripts/lib/frame.sh"
 DCC_ICON_W=0
 rowno=0
 while IFS= read -r row; do
