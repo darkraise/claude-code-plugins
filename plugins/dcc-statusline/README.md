@@ -1,7 +1,7 @@
 # dcc-statusline
 
-A two-line Claude Code status line, built for machines running several Claude
-accounts side by side.
+A Claude Code status line with an account-colored frame, built for machines
+running several Claude accounts side by side.
 
 ```
 ╭─  you@example.com ───────────────────────────────────────────────────────╮
@@ -23,7 +23,7 @@ meter labels are plain; the parent path, separators, git counters and units are
 dimmed.
 
 The frame needs to know the terminal width, which Claude Code supplies in
-`COLUMNS`. When that is missing or the terminal is narrower than 48 columns, the
+`COLUMNS`. When that is missing, non-numeric, or narrower than 48 columns, the
 status line falls back to two unframed lines rather than drawing a box it cannot
 close.
 
