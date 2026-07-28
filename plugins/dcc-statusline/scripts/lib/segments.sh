@@ -49,7 +49,7 @@ _dcc_meter() { # _dcc_meter <icon> <label> <pct> <width> <reset-epoch> <tokens|"
 }
 
 dcc_segment() { # dcc_segment <name> -> DCC_SEG_OUT, DCC_SEG_CELLS
-  local name="${1:-}" cwd root home leaf parent
+  local name="${1:-}" cwd root home leaf parent ancestry reponame sub eff
   case "$name" in
     dir)
       # Claude Code reports the working directory in Windows form while the git
@@ -58,28 +58,47 @@ dcc_segment() { # dcc_segment <name> -> DCC_SEG_OUT, DCC_SEG_CELLS
       dcc_path_norm "$P_CWD";        cwd="$DCC_PATH"
       dcc_path_norm "$DCC_GIT_ROOT"; root="$DCC_PATH"
       dcc_path_norm "${HOME:-}";     home="$DCC_PATH"
-      if [ -n "$root" ]; then
-        case "$cwd" in
-          "$root")   cwd="${root##*/}" ;;
-          "$root"/*) cwd="${root##*/}${cwd#"$root"}" ;;
-        esac
-      elif [ -n "$home" ]; then
-        # Guarded: an empty $home would turn the "$home"/* pattern into a bare
-        # /*, which matches every absolute path.
+
+      # $HOME is abbreviated before anything else so the repository and the
+      # plain-directory cases below both show the same "~/..." prefix.
+      # Guarded: an empty $home would turn the "$home"/* pattern into a bare
+      # /*, which matches every absolute path.
+      if [ -n "$home" ]; then
         case "$cwd" in
           "$home")   cwd="~" ;;
           "$home"/*) cwd="~${cwd#"$home"}" ;;
         esac
+        case "$root" in
+          "$home")   root="~" ;;
+          "$home"/*) root="~${root#"$home"}" ;;
+        esac
       fi
       [ -n "$cwd" ] || return 0
       _dcc_icon "$DCC_I_DIR" "$DCC_P_DIR"
-      leaf="${cwd##*/}"
-      if [ "$leaf" = "$cwd" ]; then
-        dcc_seg_add "$cwd" "$DCC_P_DIR" bold
+
+      if [ -n "$root" ] && { [ "$cwd" = "$root" ] || [ "${cwd#"$root"/}" != "$cwd" ]; }; then
+        # Inside a repository the path is read in three tones: what leads to the
+        # repository recedes, the repository name is the anchor, and the
+        # position inside it reads plainly. The anchor sits in the same place
+        # whatever the depth, which the older repo-relative form could not do --
+        # at the repository root it showed the repository name alone, with no
+        # indication of where that repository actually lives.
+        reponame="${root##*/}"
+        ancestry="${root%/*}/"
+        [ "$reponame" = "$root" ] && ancestry=""
+        sub="${cwd#"$root"}"
+        [ -n "$ancestry" ] && dcc_seg_add "$ancestry" "$DCC_P_DIR" dim
+        dcc_seg_add "$reponame" "$DCC_P_DIR" bold
+        [ -n "$sub" ] && dcc_seg_add "$sub" "$DCC_P_DIR"
       else
-        parent="${cwd%/*}/"
-        dcc_seg_add "$parent" "$DCC_P_DIR" dim
-        dcc_seg_add "$leaf"   "$DCC_P_DIR" bold
+        leaf="${cwd##*/}"
+        if [ "$leaf" = "$cwd" ]; then
+          dcc_seg_add "$cwd" "$DCC_P_DIR" bold
+        else
+          parent="${cwd%/*}/"
+          dcc_seg_add "$parent" "$DCC_P_DIR" dim
+          dcc_seg_add "$leaf"   "$DCC_P_DIR" bold
+        fi
       fi
       ;;
     git)
@@ -102,7 +121,23 @@ dcc_segment() { # dcc_segment <name> -> DCC_SEG_OUT, DCC_SEG_CELLS
       _dcc_icon "$DCC_I_MODEL" "$DCC_P_MODEL"
       dcc_seg_add "$P_MODEL" "$DCC_P_MODEL" bold
       ;;
-    effort)  dcc_seg_add "$P_EFFORT" "$DCC_P_EFFORT" ;;
+    effort)
+      # Coloured by level, on a cool-to-vivid progression that deliberately
+      # avoids the green-through-red the meters use for usage. Sharing those
+      # hues would make one colour mean two things on the same line: near a
+      # limit, or simply set to max. An unrecognised level falls back to the
+      # plain effort colour rather than going uncoloured.
+      [ -n "$P_EFFORT" ] || return 0
+      case "$P_EFFORT" in
+        low)    eff="$DCC_P_EFF_LOW"    ;;
+        medium) eff="$DCC_P_EFF_MEDIUM" ;;
+        high)   eff="$DCC_P_EFF_HIGH"   ;;
+        xhigh)  eff="$DCC_P_EFF_XHIGH"  ;;
+        max)    eff="$DCC_P_EFF_MAX"    ;;
+        *)      eff="$DCC_P_EFFORT"     ;;
+      esac
+      dcc_seg_add "$P_EFFORT" "$eff"
+      ;;
     fast)
       [ "$P_FAST" -eq 1 ] || return 0
       if [ "$DCC_ICON_MODE" = "nerd" ] && [ -n "$DCC_I_FAST" ]; then
