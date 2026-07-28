@@ -111,8 +111,15 @@ dcc_segment() { # dcc_segment <name> -> DCC_SEG_OUT, DCC_SEG_CELLS
     style)   dcc_seg_add "$P_STYLE" "$DCC_P_MUTE" ;;
     account)
       [ -n "$P_EMAIL" ] || return 0
-      _dcc_icon "$DCC_I_ACCOUNT" "$DCC_P_MUTE"
-      dcc_seg_add "$P_EMAIL" "$DCC_P_MUTE" dim
+      # Reached only when the frame is off, because framed mode moves the
+      # account onto the top rule and strips this segment from the line. So the
+      # account tint belongs here unconditionally: without it, a terminal too
+      # narrow to frame -- or a host that omits COLUMNS -- would carry no
+      # at-a-glance account signal at all, which is the one thing this plugin
+      # exists to provide. Dim keeps it recessive; the hue still reads.
+      local acct="${DCC_ACCOUNT_COLOR:-$DCC_P_MUTE}"
+      _dcc_icon "$DCC_I_ACCOUNT" "$acct"
+      dcc_seg_add "$P_EMAIL" "$acct" dim
       ;;
     cost)
       [ -n "$P_COST" ] || return 0
