@@ -190,12 +190,18 @@ for name in dir git model effort fast think agent style account ctx cost 5h 7d; 
 done
 
 # --- weights ------------------------------------------------------------------
+# Each check pins the weight to the specific text it must wrap, not merely to
+# the output containing that weight's escape sequence somewhere -- a check that
+# only confirmed presence would still pass if the two weights were swapped.
+esc=$'\033'
 P_CWD="/repo/claude-code-plugins/plugins"; DCC_GIT_ROOT="/repo/claude-code-plugins"
 dcc_seg_reset; dcc_segment dir
-dimmed="no"; printf '%s' "$DCC_SEG_OUT" | grep -q $'\033\\[2;38;5;12m' && dimmed="yes"
-bolded="no"; printf '%s' "$DCC_SEG_OUT" | grep -q $'\033\\[1;38;5;12m' && bolded="yes"
-check "the parent path renders dim"  "$dimmed" "yes"
-check "the leaf directory renders bold" "$bolded" "yes"
+dimparent="no"
+printf '%s' "$DCC_SEG_OUT" | grep -qF "${esc}[2;38;5;12mclaude-code-plugins/" && dimparent="yes"
+boldleaf="no"
+printf '%s' "$DCC_SEG_OUT" | grep -qF "${esc}[1;38;5;12mplugins" && boldleaf="yes"
+check "the dim weight wraps the parent path"     "$dimparent" "yes"
+check "the bold weight wraps the leaf directory" "$boldleaf"  "yes"
 
 # --- icon cell accounting -----------------------------------------------------
 check "unicode mode charges no cells for an icon" "$(segcells model)" "4"
