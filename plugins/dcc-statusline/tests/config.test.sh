@@ -54,12 +54,22 @@ unset CLAUDE_CONFIG_DIR
 DCC_ACCT_KEY="~/.claude"
 dcc_parse_all "$(cat "$F/full.json")" /dev/null /dev/null
 check "defaults: config is not flagged bad"     "$DCC_CONFIG_BAD" "0"
-check "defaults: line one segment order"        "$DCC_LINE1" "dir git model effort fast think agent style account"
+check "defaults: line one segment order"        "$DCC_LINE1" "dir git model effort fast agent style account"
 check "defaults: line two segment order"        "$DCC_LINE2" "ctx cost 5h 7d"
 check "defaults: context meter width"           "$DCC_W_CTX" "10"
 check "defaults: usage meter width"             "$DCC_W_5H"  "8"
 check "defaults: ramp is sorted ascending"      "$DCC_RAMP"  "0:green: 50:yellow: 75:orange: 90:red:bold"
 check "defaults: no account entry means no tint" "$DCC_ACCOUNT_COLOR" ""
+check "defaults: frame mode"                    "$DCC_FRAME_MODE"    "auto"
+check "defaults: icon mode"                     "$DCC_ICON_MODE_CFG" "auto"
+check "defaults: icon width defers to detection" "$DCC_ICON_W_CFG"   "0"
+check "defaults: path palette"                  "$DCC_P_DIR"    "blue"
+check "defaults: branch palette"                "$DCC_P_GIT"    "magenta"
+check "defaults: model palette"                 "$DCC_P_MODEL"  "cyan"
+check "defaults: effort palette"                "$DCC_P_EFFORT" "gray"
+check "defaults: fast palette"                  "$DCC_P_FAST"   "white"
+check "defaults: cost palette"                  "$DCC_P_COST"   "141"
+check "defaults: muted palette"                 "$DCC_P_MUTE"   "gray"
 
 # --- payload extraction -------------------------------------------------------
 check "model display name"          "$P_MODEL"     "Opus"
@@ -163,5 +173,20 @@ check "drift: the config still loads"                    "$DCC_LINE2" "ctx cost 
 dcc_parse_all '{"model":{"display_name":"Opus"},"context_window":{"used_percentage":"47"}}' /dev/null /dev/null
 check "drift: a string percentage yields empty"          "$P_CTX_PCT" ""
 check "drift: the model survives a string percentage"    "$P_MODEL"   "Opus"
+
+# --- user overrides for frame, icon and palette config -------------------------
+cfg="$(mktemp)"
+cat > "$cfg" <<'JSON'
+{ "frame": "none",
+  "icons": { "mode": "nerd", "width": 1 },
+  "palette": { "dir": "green" } }
+JSON
+dcc_parse_all "$(cat "$F/full.json")" "$cfg" /dev/null
+check "user frame mode overrides"   "$DCC_FRAME_MODE"    "none"
+check "user icon mode overrides"    "$DCC_ICON_MODE_CFG" "nerd"
+check "user icon width overrides"   "$DCC_ICON_W_CFG"    "1"
+check "user palette entry overrides" "$DCC_P_DIR"        "green"
+check "unset palette entries keep defaults" "$DCC_P_GIT" "magenta"
+rm -f "$cfg"
 
 finish

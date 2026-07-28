@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# Claude Code status line. Reads the session payload on stdin, prints two lines.
+# Claude Code status line. Reads the session payload on stdin, prints two lines,
+# or four when the frame is enabled.
 #
 # Process budget: one jq, two git, and the timeout wrappers around them. Nothing
 # in this file may use $(...) -- see the note in lib/color.sh.
 set -uo pipefail
+
+# Without a UTF-8 locale bash measures and slices bytes, so a three-byte box
+# glyph counts as three cells and the frame's right wall lands in the wrong
+# place. Every width calculation downstream depends on this line.
+export LC_ALL=C.UTF-8
 
 # Resolve our own directory by parameter expansion only. $(cd ... && pwd) would
 # cost two forks on every render, which the process budget does not allow.
@@ -13,12 +19,33 @@ DCC_DIR="${BASH_SOURCE[0]%/*}"
 source "$DCC_DIR/lib/path.sh"
 source "$DCC_DIR/lib/color.sh"
 source "$DCC_DIR/lib/config.sh"
+source "$DCC_DIR/lib/icons.sh"
 source "$DCC_DIR/lib/render.sh"
+source "$DCC_DIR/lib/frame.sh"
 source "$DCC_DIR/lib/git.sh"
 source "$DCC_DIR/lib/segments.sh"
 
+_dcc_emit_line() { # _dcc_emit_line <segment-names>
+  local name
+  dcc_line_reset
+  for name in $1; do
+    dcc_segment "$name"
+    dcc_line_push
+  done
+}
+
+_dcc_strip_account() { # _dcc_strip_account <names> -> DCC_NAMES
+  local name out=""
+  DCC_NAMES=""
+  for name in $1; do
+    [ "$name" = "account" ] && continue
+    out="$out $name"
+  done
+  DCC_NAMES="${out# }"
+}
+
 dcc_main() {
-  local input="" name
+  local names1 names2
 
   IFS= read -r -d '' input || true
   [ -n "$input" ] || return 0
@@ -33,32 +60,67 @@ dcc_main() {
   dcc_claude_json_path
   dcc_parse_all "$input" "$DCC_CONFIG_PATH" "$DCC_CLAUDE_JSON" || return 0
 
+  dcc_icons_init
+  dcc_frame_init
+  dcc_frame_budget
+  dcc_sep_cells "${#DCC_SEP}"
+
   # Tests freeze the clock; %(%s)T is a bash builtin, so this costs no fork.
   [ -n "${DCC_NOW:-}" ] || printf -v DCC_NOW '%(%s)T' -1
 
+  names1="$DCC_LINE1"
+  names2="$DCC_LINE2"
+
+  # Framed mode moves the account onto the top rule, so it must not also render
+  # inside. Unframed mode leaves the line list exactly as configured.
+  #
+  # Both lines are stripped: nothing stops a user putting "account" on line two,
+  # and the top rule is drawn from P_EMAIL regardless of which line it was
+  # configured on, so stripping only line one renders the address twice.
+  #
+  # Matching is on whole words rather than by substring substitution, so a
+  # future segment name that merely contains "account" cannot be silently
+  # mangled.
+  if [ "$DCC_FRAME_ON" -eq 1 ]; then
+    _dcc_strip_account "$names1"; names1="$DCC_NAMES"
+    _dcc_strip_account "$names2"; names2="$DCC_NAMES"
+  fi
+
   # Collect git state only when a git segment is actually configured.
-  case " $DCC_LINE1 $DCC_LINE2 " in
+  case " $names1 $names2 " in
     *" git "*|*" dir "*) dcc_git_collect "$P_CWD" || true ;;
   esac
 
-  dcc_join_reset
-  for name in $DCC_LINE1; do
-    dcc_segment "$name"
-    dcc_join_add "$DCC_SEG_SPEC" "$DCC_SEG_TEXT"
-  done
-  [ "$DCC_CONFIG_BAD" -eq 1 ] && dcc_join_add "red bold" "cfg?"
-  [ -n "$DCC_JOINED" ] && printf '%s\n' "$DCC_JOINED"
+  if [ "$DCC_FRAME_ON" -eq 1 ]; then
+    dcc_frame_top "$P_EMAIL" "$DCC_I_ACCOUNT" "$DCC_ICON_W"
+    printf '%s\n' "$DCC_FRAME_OUT"
+    _dcc_emit_line "$names1"
+    [ "$DCC_CONFIG_BAD" -eq 1 ] && { dcc_seg_add "cfg?" red bold; dcc_line_push; }
+    dcc_line_build "$DCC_FRAME_BUDGET"
+    dcc_frame_row "$DCC_LINE_OUT" "$DCC_LINE_CELLS"
+    printf '%s\n' "$DCC_FRAME_OUT"
+    _dcc_emit_line "$names2"
+    dcc_line_build "$DCC_FRAME_BUDGET"
+    dcc_frame_row "$DCC_LINE_OUT" "$DCC_LINE_CELLS"
+    printf '%s\n' "$DCC_FRAME_OUT"
+    dcc_frame_bottom
+    printf '%s\n' "$DCC_FRAME_OUT"
+    return 0
+  fi
 
-  dcc_join_reset
-  for name in $DCC_LINE2; do
-    dcc_segment "$name"
-    dcc_join_add "$DCC_SEG_SPEC" "$DCC_SEG_TEXT"
-  done
-  [ -n "$DCC_JOINED" ] && printf '%s\n' "$DCC_JOINED"
+  _dcc_emit_line "$names1"
+  [ "$DCC_CONFIG_BAD" -eq 1 ] && { dcc_seg_add "cfg?" red bold; dcc_line_push; }
+  dcc_line_build
+  [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
+
+  _dcc_emit_line "$names2"
+  dcc_line_build
+  [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 
   return 0
 }
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  input=""
   dcc_main
 fi

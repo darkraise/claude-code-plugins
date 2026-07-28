@@ -6,10 +6,16 @@ set -uo pipefail
 
 DCC_DEFAULT_CONFIG='{
   "lines": [
-    ["dir","git","model","effort","fast","think","agent","style","account"],
+    ["dir","git","model","effort","fast","agent","style","account"],
     ["ctx","cost","5h","7d"]
   ],
-  "separator": "  ·  ",
+  "separator": "  \u00b7  ",
+  "frame": "auto",
+  "icons": { "mode": "auto", "width": 0 },
+  "palette": {
+    "dir": "blue", "git": "magenta", "model": "cyan",
+    "effort": "gray", "fast": "white", "cost": "141", "mute": "gray"
+  },
   "meters": {
     "width": {"ctx":10,"5h":8,"7d":8},
     "showEta": true,
@@ -22,7 +28,7 @@ DCC_DEFAULT_CONFIG='{
     ]
   },
   "accounts": {},
-  "glyphs": {"filled":"█","empty":"░","dirty":"*"}
+  "glyphs": {"filled":"\u25b0","empty":"\u25b1","dirty":"*"}
 }'
 
 # jq emits shell assignments. @sh quotes every interpolation, so a directory or
@@ -44,6 +50,16 @@ DCC_JQ_PROG='
   @sh "DCC_LINE1=\($c.lines[0] // [] | join(" "))",
   @sh "DCC_LINE2=\($c.lines[1] // [] | join(" "))",
   @sh "DCC_SEP=\($c.separator)",
+  @sh "DCC_FRAME_MODE=\($c.frame // "auto")",
+  @sh "DCC_ICON_MODE_CFG=\($c.icons.mode // "auto")",
+  @sh "DCC_ICON_W_CFG=\(num($c.icons.width; 0))",
+  @sh "DCC_P_DIR=\($c.palette.dir // "blue")",
+  @sh "DCC_P_GIT=\($c.palette.git // "magenta")",
+  @sh "DCC_P_MODEL=\($c.palette.model // "cyan")",
+  @sh "DCC_P_EFFORT=\($c.palette.effort // "gray")",
+  @sh "DCC_P_FAST=\($c.palette.fast // "white")",
+  @sh "DCC_P_COST=\($c.palette.cost // "141")",
+  @sh "DCC_P_MUTE=\($c.palette.mute // "gray")",
   @sh "DCC_W_CTX=\($c.meters.width.ctx // 10)",
   @sh "DCC_W_5H=\($c.meters.width["5h"] // 8)",
   @sh "DCC_W_7D=\($c.meters.width["7d"] // 8)",
@@ -107,15 +123,25 @@ P_7D_RESET=""
 # construction: no segment loop runs, so no segment's behavior matters.
 DCC_LINE1=""
 DCC_LINE2=""
-DCC_SEP="  ·  "
+printf -v DCC_SEP '  \302\267  '   # U+00B7 middle dot
+DCC_FRAME_MODE="auto"
+DCC_ICON_MODE_CFG="auto"
+DCC_ICON_W_CFG=0
+DCC_P_DIR="blue"
+DCC_P_GIT="magenta"
+DCC_P_MODEL="cyan"
+DCC_P_EFFORT="gray"
+DCC_P_FAST="white"
+DCC_P_COST="141"
+DCC_P_MUTE="gray"
 DCC_W_CTX=10
 DCC_W_5H=8
 DCC_W_7D=8
 DCC_SHOW_ETA=1
 DCC_SHOW_TOKENS=1
 DCC_RAMP="0:green: 50:yellow: 75:orange: 90:red:bold"
-DCC_GLYPH_FILLED="█"
-DCC_GLYPH_EMPTY="░"
+printf -v DCC_GLYPH_FILLED '\342\226\260'   # U+25B0
+printf -v DCC_GLYPH_EMPTY  '\342\226\261'   # U+25B1
 DCC_GLYPH_DIRTY="*"
 DCC_ACCOUNT_COLOR=""
 

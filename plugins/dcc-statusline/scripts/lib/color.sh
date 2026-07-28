@@ -11,8 +11,8 @@ DCC_PAINTED=""
 
 dcc_reset() { DCC_R="$DCC_ESC[0m"; }
 
-dcc_color() { # dcc_color <name> [bold] -> DCC_C
-  local name="${1:-}" bold="${2:-}" code=""
+dcc_color() { # dcc_color <name> [weight: ''|bold|dim] -> DCC_C
+  local name="${1:-}" weight="${2:-}" code=""
   case "$name" in
     black)     code=0   ;;
     red)       code=9   ;;
@@ -28,14 +28,14 @@ dcc_color() { # dcc_color <name> [bold] -> DCC_C
     *[!0-9]*)  DCC_C=""; return 0 ;;
     *)         code="$name" ;;
   esac
-  if [ "$bold" = "bold" ]; then
-    DCC_C="$DCC_ESC[1;38;5;${code}m"
-  else
-    DCC_C="$DCC_ESC[38;5;${code}m"
-  fi
+  case "$weight" in
+    bold) DCC_C="$DCC_ESC[1;38;5;${code}m" ;;
+    dim)  DCC_C="$DCC_ESC[2;38;5;${code}m" ;;
+    *)    DCC_C="$DCC_ESC[38;5;${code}m"   ;;
+  esac
 }
 
-dcc_paint() { # dcc_paint <text> <color-name> [bold] -> DCC_PAINTED
+dcc_paint() { # dcc_paint <text> <color-name> [weight: ''|bold|dim] -> DCC_PAINTED
   dcc_color "${2:-}" "${3:-}"
   if [ -z "$DCC_C" ]; then DCC_PAINTED="$1"; else DCC_PAINTED="$DCC_C$1$DCC_R"; fi
 }

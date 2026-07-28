@@ -24,4 +24,16 @@ check "paint with no color returns text unchanged" "$DCC_PAINTED" "hi"
 dcc_paint "hi" green
 check "painted text survives ansi stripping" "$(printf '%s' "$DCC_PAINTED" | strip_ansi)" "hi"
 
+# --- dim weight ---------------------------------------------------------------
+dcc_color cyan dim
+check "dim emits SGR 2 before the colour" "$DCC_C" $'\033[2;38;5;14m'
+dcc_color cyan bold
+check "bold still emits SGR 1"            "$DCC_C" $'\033[1;38;5;14m'
+dcc_color cyan
+check "no weight emits neither"           "$DCC_C" $'\033[38;5;14m'
+dcc_color cyan nonsense
+check "an unknown weight falls back to plain" "$DCC_C" $'\033[38;5;14m'
+dcc_paint "x" cyan dim
+check "paint threads the weight through" "$DCC_PAINTED" $'\033[2;38;5;14mx\033[0m'
+
 finish

@@ -199,4 +199,39 @@ check "scripts/VERSION matches the plugin manifest version" \
   "$(jq -r '.version' "$HERE/../.claude-plugin/plugin.json")"
 
 rm -rf "$fake" "$src"
+# DCC_STATUSLINE_HOME is still exported from line 16, pointing at the fake home
+# just removed above. Left set, it would override the fresh DCC_FAKE_HOME below
+# and silently redirect the next block's writes into that stale, deleted path.
+unset DCC_STATUSLINE_HOME
+
+# --- font detection at install ------------------------------------------------
+fake="$(mktemp -d)"
+export DCC_FAKE_HOME="$fake"
+mkdir -p "$fake/.claude"
+printf '{}' > "$fake/.claude/settings.json"
+
+DCC_WT_SETTINGS="$HERE/fixtures/wt-nerd.json" \
+  bash "$HERE/../scripts/install.sh" install >/dev/null 2>&1
+check "install writes the detection cache" \
+  "$(cat "$fake/.claude/dcc-statusline/icons.detected" 2>/dev/null)" "nerd 2"
+
+DCC_WT_SETTINGS="$HERE/fixtures/wt-plain.json" \
+  bash "$HERE/../scripts/install.sh" install >/dev/null 2>&1
+check "re-installing refreshes the cache" \
+  "$(cat "$fake/.claude/dcc-statusline/icons.detected" 2>/dev/null)" "unicode 1"
+
+out="$(DCC_WT_SETTINGS="$HERE/fixtures/wt-plain.json" \
+  bash "$HERE/../scripts/install.sh" doctor 2>&1)"
+check "doctor reports the icon mode" "$(printf '%s' "$out" | grep -c '^icons:')" "1"
+
+# --- font detection on sync ---------------------------------------------------
+printf '9.9.9' > "$fake/.claude/dcc-statusline/VERSION"
+DCC_WT_SETTINGS="$HERE/fixtures/wt-nerd.json" \
+  CLAUDE_PLUGIN_ROOT="$HERE/.." bash "$HERE/../scripts/sync.sh" >/dev/null 2>&1
+check "a version change re-runs detection" \
+  "$(cat "$fake/.claude/dcc-statusline/icons.detected" 2>/dev/null)" "nerd 2"
+
+rm -rf "$fake"
+unset DCC_FAKE_HOME
+
 finish
