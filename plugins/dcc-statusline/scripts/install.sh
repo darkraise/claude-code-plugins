@@ -42,6 +42,9 @@ dcc_copy_scripts() {
   cp -R "$DCC_SRC_DIR/." "$DCC_DEST/" 2>/dev/null || return 1
   # install.sh and sync.sh are plugin-side entry points; the copy only needs the
   # render path, but copying everything keeps VERSION comparison trivial.
+  # The probe forks freely; it runs here rather than in the render path, which
+  # budgets five processes and cannot afford to look at fonts.
+  bash "$DCC_DEST/detect-font.sh" "$DCC_DEST/icons.detected" >/dev/null 2>&1 || true
   return 0
 }
 
@@ -113,7 +116,7 @@ dcc_targets() { # dcc_targets <--all|"">
 
 dcc_doctor() {
   _dcc_paths
-  local rc=0 d cfg key probe rendered
+  local rc=0 d cfg key probe rendered dcc_m dcc_w
   cfg="$DCC_HOME_DIR/.claude/dcc-statusline.json"
   command -v jq  >/dev/null 2>&1 && printf 'ok   - jq is on PATH\n'  || { printf 'FAIL - jq is not on PATH\n';  rc=1; }
   command -v git >/dev/null 2>&1 && printf 'ok   - git is on PATH\n' || { printf 'warn - git is not on PATH; the git segment will be hidden\n'; }
@@ -126,6 +129,12 @@ dcc_doctor() {
     fi
   else
     printf 'FAIL - scripts are not installed; run: /dcc-statusline install\n'; rc=1
+  fi
+  if [ -r "$DCC_DEST/icons.detected" ]; then
+    read -r dcc_m dcc_w < "$DCC_DEST/icons.detected"
+    printf 'icons: %s at %s cell(s)\n' "${dcc_m:-unknown}" "${dcc_w:-?}"
+  else
+    printf 'icons: not detected yet -- run install to probe\n'
   fi
   if [ -f "$cfg" ]; then
     if jq -e . "$cfg" >/dev/null 2>&1; then

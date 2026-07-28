@@ -18,4 +18,7 @@ DCC_DEST="${DCC_STATUSLINE_HOME:-${DCC_FAKE_HOME:-$HOME}/.claude/dcc-statusline}
 [ -d "$DCC_DEST" ] || exit 0
 cmp -s "$DCC_SRC/VERSION" "$DCC_DEST/VERSION" && exit 0
 cp -R "$DCC_SRC/." "$DCC_DEST/" 2>/dev/null
+# Font capability can change between updates -- a new machine, a new terminal
+# profile -- so it is re-probed whenever the scripts are refreshed.
+bash "$DCC_DEST/detect-font.sh" "$DCC_DEST/icons.detected" >/dev/null 2>&1 || true
 exit 0
