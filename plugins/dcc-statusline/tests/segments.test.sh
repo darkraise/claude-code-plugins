@@ -17,7 +17,18 @@ DCC_W_CTX=10; DCC_W_5H=8; DCC_W_7D=8
 DCC_SHOW_ETA=1; DCC_SHOW_TOKENS=1
 DCC_NOW=1785886800   # fixed clock so countdowns are deterministic
 
-seg() { dcc_segment "$1"; printf '%s' "$DCC_SEG_TEXT"; }
+DCC_ICON_MODE="unicode"; DCC_ICON_W=0
+DCC_I_DIR=""; DCC_I_GIT=""; DCC_I_MODEL=""; DCC_I_FAST=""
+DCC_I_ACCOUNT=""; DCC_I_CTX=""; DCC_I_CLOCK=""; DCC_I_COST=""
+DCC_P_DIR="blue"; DCC_P_GIT="magenta"; DCC_P_MODEL="cyan"
+DCC_P_EFFORT="gray"; DCC_P_FAST="white"; DCC_P_COST="141"; DCC_P_MUTE="gray"
+
+seg() { # seg <name> -> the visible text of that segment
+  dcc_seg_reset
+  dcc_segment "$1"
+  printf '%s' "$DCC_SEG_OUT" | strip_ansi
+}
+segcells() { dcc_seg_reset; dcc_segment "$1"; printf '%s' "$DCC_SEG_CELLS"; }
 
 # --- dir ----------------------------------------------------------------------
 P_CWD="D:/Repositories/Personal/claude-code-plugins/plugins"
@@ -94,8 +105,7 @@ P_EFFORT="xhigh"; check "effort level"            "$(seg effort)" "xhigh"
 P_EFFORT="";      check "absent effort is hidden" "$(seg effort)" ""
 P_FAST=1;  check "fast mode shows when on"        "$(seg fast)"   "fast"
 P_FAST=0;  check "fast mode hides when off"       "$(seg fast)"   ""
-P_THINK=1; check "thinking shows when on"         "$(seg think)"  "think"
-P_THINK=0; check "thinking hides when off"        "$(seg think)"  ""
+check "the think segment no longer exists" "$(seg think)" ""
 P_AGENT="security-reviewer"; check "agent name"   "$(seg agent)"  "security-reviewer"
 P_AGENT="";                  check "no agent"     "$(seg agent)"  ""
 P_STYLE="explanatory"; check "output style"       "$(seg style)"  "explanatory"
@@ -108,37 +118,39 @@ P_COST="";       check "absent cost is hidden"      "$(seg cost)" ""
 
 # --- meters -------------------------------------------------------------------
 P_CTX_PCT=47; P_CTX_TOK=94210
-check "context meter: bar, percentage, tokens" "$(seg ctx)" "ctx [#####.....] 47% (94k)"
-dcc_segment ctx
-check "context meter takes its ramp color, not the tint" "$DCC_SEG_SPEC" "green "
+check "context meter: bar, percentage, tokens" "$(seg ctx)" "ctx #####..... 47% · 94k"
+
+P_CTX_PCT=47; dcc_seg_reset; dcc_segment ctx
+ramped="no"; printf '%s' "$DCC_SEG_OUT" | grep -q $'\033\\[38;5;10m' && ramped="yes"
+check "a low meter paints its bar green" "$ramped" "yes"
 
 P_CTX_TOK=800
-check "sub-1k token counts are shown raw" "$(seg ctx)" "ctx [#####.....] 47% (800)"
+check "sub-1k token counts are shown raw" "$(seg ctx)" "ctx #####..... 47% · 800"
 
 DCC_SHOW_TOKENS=0
-check "tokens can be turned off" "$(seg ctx)" "ctx [#####.....] 47%"
+check "tokens can be turned off" "$(seg ctx)" "ctx #####..... 47%"
 DCC_SHOW_TOKENS=1
 
 P_CTX_PCT=""
 check "a null context percentage hides the meter" "$(seg ctx)" ""
 
 P_5H_PCT=23; P_5H_RESET=1785900000
-check "5h meter with countdown" "$(seg 5h)" "5h [##......] 23% (3h40m)"
+check "5h meter with countdown" "$(seg 5h)" "5h ##...... 23% · 3h40m"
 
-P_5H_PCT=92
-dcc_segment 5h
-check "a meter above 90% turns red and bold" "$DCC_SEG_SPEC" "red bold"
+P_5H_PCT=95; dcc_seg_reset; dcc_segment 5h
+ramped="no"; printf '%s' "$DCC_SEG_OUT" | grep -q $'\033\\[1;38;5;9m' && ramped="yes"
+check "a meter above 90% turns red and bold" "$ramped" "yes"
 
 DCC_SHOW_ETA=0
 P_5H_PCT=23
-check "the countdown can be turned off" "$(seg 5h)" "5h [##......] 23%"
+check "the countdown can be turned off" "$(seg 5h)" "5h ##...... 23%"
 DCC_SHOW_ETA=1
 
 P_5H_PCT=""; P_5H_RESET=""
 check "an absent rate limit hides the meter" "$(seg 5h)" ""
 
 P_7D_PCT=41; P_7D_RESET=1786400000
-check "7d meter with a multi-day countdown" "$(seg 7d)" "7d [###.....] 41% (5d22h)"
+check "7d meter with a multi-day countdown" "$(seg 7d)" "7d ###..... 41% · 5d22h"
 
 # Belt and braces for the reset value. jq coerces this field, but anything that
 # reached bash arithmetic uncoerced -- a float, an ISO date, a bare word -- raises
@@ -149,7 +161,7 @@ P_5H_PCT=23
 for bad in "1785900000.0" "2026-07-28T10:00:00Z" "soon" "-5"; do
   P_5H_RESET="$bad"
   check "a non-numeric reset [$bad] costs only the countdown" \
-    "$( { seg 5h; } 2>&1 )" "5h [##......] 23%"
+    "$( { seg 5h; } 2>&1 )" "5h ##...... 23%"
 done
 P_5H_PCT=""; P_5H_RESET=""
 
@@ -169,11 +181,29 @@ for name in dir git model effort fast think agent style account ctx cost 5h 7d; 
       unset P_EMAIL P_CWD P_MODEL P_EFFORT P_FAST P_THINK P_AGENT P_STYLE \
             P_CTX_PCT P_CTX_TOK P_COST P_5H_PCT P_5H_RESET P_7D_PCT P_7D_RESET
       source "$HERE/../scripts/lib/config.sh"
+      dcc_seg_reset
       dcc_segment "$name"
-      printf 'rc=%d text=[%s]' "$?" "$DCC_SEG_TEXT"
+      printf 'rc=%d text=[%s]' "$?" "$DCC_SEG_OUT"
     } 2>&1
   )
   check "unset P_* leaves the '$name' segment empty, not aborted" "$result" "rc=0 text=[]"
 done
+
+# --- weights ------------------------------------------------------------------
+P_CWD="/repo/claude-code-plugins/plugins"; DCC_GIT_ROOT="/repo/claude-code-plugins"
+dcc_seg_reset; dcc_segment dir
+dimmed="no"; printf '%s' "$DCC_SEG_OUT" | grep -q $'\033\\[2;38;5;12m' && dimmed="yes"
+bolded="no"; printf '%s' "$DCC_SEG_OUT" | grep -q $'\033\\[1;38;5;12m' && bolded="yes"
+check "the parent path renders dim"  "$dimmed" "yes"
+check "the leaf directory renders bold" "$bolded" "yes"
+
+# --- icon cell accounting -----------------------------------------------------
+check "unicode mode charges no cells for an icon" "$(segcells model)" "4"
+DCC_ICON_MODE="nerd"; DCC_ICON_W=2
+printf -v DCC_I_MODEL '\357\213\233'
+check "a double-width icon charges three cells with its space" "$(segcells model)" "7"
+DCC_ICON_W=1
+check "a single-width icon charges two cells with its space" "$(segcells model)" "6"
+DCC_ICON_MODE="unicode"; DCC_I_MODEL=""
 
 finish

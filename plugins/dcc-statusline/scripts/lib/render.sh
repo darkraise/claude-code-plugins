@@ -2,6 +2,12 @@
 set -uo pipefail
 # Rendering primitives. Out-variables throughout, for the fork reason in color.sh.
 
+printf -v DCC_SEP_DOT    '\302\267'        # U+00B7 middle dot
+printf -v DCC_ARROW_UP   '\342\206\221'    # U+2191
+printf -v DCC_ARROW_DOWN '\342\206\223'    # U+2193
+printf -v DCC_DOT_FILLED '\342\227\217'    # U+25CF
+printf -v DCC_DOT_HOLLOW '\342\227\213'    # U+25CB
+
 DCC_RAMP_COLOR=""
 DCC_RAMP_BOLD=""
 DCC_BAR_ON=""; DCC_BAR_OFF=""; DCC_BAR_ON_N=0; DCC_BAR_OFF_N=0
