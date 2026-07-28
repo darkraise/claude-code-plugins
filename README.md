@@ -13,7 +13,7 @@ In Claude Code:
 Then browse and install a plugin:
 
 ```
-/plugin install example-plugin@darkraise
+/plugin install dcc-statusline@darkraise
 ```
 
 The marketplace identifier is `darkraise` (the name after `@` when installing). The
@@ -23,14 +23,33 @@ GitHub repository is `darkraise/claude-code-plugins`.
 
 | Plugin | Description |
 | ------ | ----------- |
-| `telegram-notify` | Telegram push notifications when a session finishes a turn, ends on a question, or needs your attention. Cross-platform, multi-account aware, optional LLM summaries. |
+| `dcc-statusline` | A status line with an account-colored frame, semantic per-section colour, and context and rate-limit meters. Built for machines running several Claude accounts side by side. |
 | `dcc-superpower-companions` | Extends superpowers with 16 model and effort tiered implementer subagents. Scores every plan task, records the assigned implementer in the plan, and dispatches it with a defined escalation ladder. |
-| `example-plugin` | A minimal template plugin demonstrating a slash command and a skill. Clone it to start a new plugin. |
+| `telegram-notify` | Telegram push notifications when a session finishes a turn, ends on a question, or needs your attention. Cross-platform, multi-account aware, optional LLM summaries. |
+
+`dcc-statusline` needs one extra step after installing. A plugin's own
+`settings.json` supports only the `agent` and `subagentStatusLine` keys, so no
+plugin can register the main `statusLine` for you. Run `/dcc-statusline install`
+once per machine to write that entry into your own settings.
 
 ## Adding a new plugin
 
-1. Copy `plugins/example-plugin/` to `plugins/<your-plugin>/`.
-2. Edit `plugins/<your-plugin>/.claude-plugin/plugin.json`: set `name`, `description`, `version`, and `keywords`.
+1. Create `plugins/<your-plugin>/.claude-plugin/plugin.json`. New plugin names
+   take the `dcc-` prefix, and the name must match the directory and the
+   marketplace entry:
+
+   ```json
+   {
+     "name": "dcc-<your-plugin>",
+     "description": "What it does.",
+     "version": "0.1.0",
+     "keywords": ["..."]
+   }
+   ```
+
+2. Pick a starting point from an existing plugin if it helps: `dcc-statusline`
+   for scripts, hooks and a slash command; `telegram-notify` for hooks and
+   configuration; `dcc-superpower-companions` for agents.
 3. Add components under the plugin directory. Claude Code auto-discovers the standard
    directories: `commands/` for slash commands, `skills/<name>/SKILL.md` for skills,
    `agents/` for subagents, `hooks/` for hooks, and `.mcp.json` for MCP servers.
@@ -39,8 +58,8 @@ GitHub repository is `darkraise/claude-code-plugins`.
 
    ```json
    {
-     "name": "<your-plugin>",
-     "source": "./plugins/<your-plugin>",
+     "name": "dcc-<your-plugin>",
+     "source": "./plugins/dcc-<your-plugin>",
      "description": "What it does.",
      "keywords": ["..."]
    }
