@@ -42,30 +42,67 @@ dcc_eta 0;      check "zero reads as now"        "$DCC_ETA" "now"
 dcc_eta -60;    check "elapsed reads as now"     "$DCC_ETA" "now"
 dcc_eta "";     check "empty seconds yields nothing" "$DCC_ETA" ""
 
-# --- joining ------------------------------------------------------------------
-dcc_join_reset
-dcc_join_add "" "one"
-dcc_join_add "" "two"
-check "segments are joined with the separator" "$(printf '%s' "$DCC_JOINED" | strip_ansi)" "one | two"
+# --- segment accumulation and line building -----------------------------------
+dcc_sep_cells 3     # " | "
 
-dcc_join_reset
-dcc_join_add "" "one"
-dcc_join_add "" ""
-dcc_join_add "" "three"
+seg() { # seg <text> <color> [weight] [cells]
+  dcc_seg_add "$1" "$2" "${3:-}" "${4:-}"; dcc_line_push
+}
+
+dcc_line_reset; seg one green; seg two green; dcc_line_build
+check "segments are joined with the separator" \
+  "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi)" "one | two"
+check "the built line reports its cell width" "$DCC_LINE_CELLS" "9"
+
+dcc_line_reset; seg one green; seg "" green; seg three green; dcc_line_build
 check "an empty segment leaves no doubled separator" \
-  "$(printf '%s' "$DCC_JOINED" | strip_ansi)" "one | three"
+  "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi)" "one | three"
 
-dcc_join_reset
-dcc_join_add "" ""
-check "an all-empty line renders as nothing" "$DCC_JOINED" ""
+dcc_line_reset; seg "" green; dcc_line_build
+check "an all-empty line renders as nothing" "$DCC_LINE_OUT" ""
+check "an all-empty line measures zero"      "$DCC_LINE_CELLS" "0"
 
-DCC_ACCOUNT_COLOR="magenta"
-dcc_join_reset
-dcc_join_add "" "tinted"
-check "an empty colorspec takes the account tint" "$DCC_JOINED" $'\033[38;5;13mtinted\033[0m'
+# A segment carrying multiple weights is one unit to the joiner.
+dcc_line_reset
+dcc_seg_add "main" magenta bold
+dcc_seg_add "*"    magenta dim
+dcc_line_push
+dcc_line_build
+check "one segment may mix weights" "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi)" "main*"
+check "mixed weights sum their cells" "$DCC_LINE_CELLS" "5"
 
-dcc_join_reset
-dcc_join_add "red bold" "warn"
-check "an explicit colorspec overrides the tint" "$DCC_JOINED" $'\033[1;38;5;9mwarn\033[0m'
+# An explicit cell count overrides the character count, which is how a
+# double-width icon is accounted for.
+dcc_line_reset
+dcc_seg_add "X" cyan "" 2
+dcc_line_push
+dcc_line_build
+check "an explicit cell count wins" "$DCC_LINE_CELLS" "2"
+
+# --- overflow -----------------------------------------------------------------
+dcc_line_reset; seg aaaa green; seg bbbb green; seg cccc green
+dcc_line_build 12
+check "an over-long line drops trailing segments" \
+  "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi)" "aaaa | bbbb"
+check "the drop count is reported" "$DCC_LINE_DROPPED" "1"
+check "the surviving line fits the budget" "$DCC_LINE_CELLS" "11"
+
+dcc_line_reset; seg aaaa green; seg bbbb green
+dcc_line_build 0
+check "a zero budget means unlimited" \
+  "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi)" "aaaa | bbbb"
+
+dcc_line_reset; seg aaaaaaaaaaaaaaaa green
+dcc_line_build 4
+check "a single over-long segment yields an empty line" "$DCC_LINE_OUT" ""
+
+# --- colouring ----------------------------------------------------------------
+dcc_line_reset; seg tinted magenta; dcc_line_build
+check "a segment takes the colour it was given" "$DCC_LINE_OUT" $'\033[38;5;13mtinted\033[0m'
+
+DCC_P_MUTE="gray"
+dcc_line_reset; seg one green; seg two green; dcc_line_build
+sepcolor="no"; printf '%s' "$DCC_LINE_OUT" | grep -q $'\033\\[2;38;5;245m' && sepcolor="yes"
+check "the separator renders dim and muted" "$sepcolor" "yes"
 
 finish

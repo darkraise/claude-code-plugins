@@ -6,8 +6,6 @@ DCC_RAMP_COLOR=""
 DCC_RAMP_BOLD=""
 DCC_BAR_ON=""; DCC_BAR_OFF=""; DCC_BAR_ON_N=0; DCC_BAR_OFF_N=0
 DCC_ETA=""
-DCC_JOINED=""
-DCC_JOIN_EMPTY=1
 
 dcc_ramp() { # dcc_ramp <pct> -> DCC_RAMP_COLOR, DCC_RAMP_BOLD
   local pct="${1:-}" stop at rest
@@ -53,23 +51,58 @@ dcc_eta() { # dcc_eta <seconds-until-reset> -> DCC_ETA
   fi
 }
 
-dcc_join_reset() { DCC_JOINED=""; DCC_JOIN_EMPTY=1; }
+DCC_SEG_OUT=""
+DCC_SEG_CELLS=0
+DCC_SEP_CELLS=5
+DCC_LINE_OUT=""
+DCC_LINE_CELLS=0
+DCC_LINE_DROPPED=0
+declare -a DCC_SEGS=() DCC_SEGW=()
 
-dcc_join_add() { # dcc_join_add <colorspec> <text>
-  local spec="${1:-}" text="${2:-}" color bold
+dcc_sep_cells() { DCC_SEP_CELLS="${1:-0}"; }
+
+dcc_seg_reset() { DCC_SEG_OUT=""; DCC_SEG_CELLS=0; }
+
+dcc_seg_add() { # dcc_seg_add <text> <color> [weight] [cells]
+  local text="${1:-}" color="${2:-}" weight="${3:-}" cells="${4:-}"
   [ -n "$text" ] || return 0
-  if [ -n "$spec" ]; then
-    color="${spec%% *}"
-    bold="${spec#* }"
-    [ "$bold" = "$spec" ] && bold=""
-  else
-    color="$DCC_ACCOUNT_COLOR"; bold=""
+  # Character count is only correct for ASCII. Anything else -- an icon, a bar
+  # cell, a box glyph -- must state its width, because a double-width icon
+  # counts as one character and two cells.
+  [ -n "$cells" ] || cells=${#text}
+  dcc_paint "$text" "$color" "$weight"
+  DCC_SEG_OUT="$DCC_SEG_OUT$DCC_PAINTED"
+  DCC_SEG_CELLS=$(( DCC_SEG_CELLS + cells ))
+}
+
+dcc_line_reset() { DCC_SEGS=(); DCC_SEGW=(); dcc_seg_reset; }
+
+dcc_line_push() {
+  if [ -n "$DCC_SEG_OUT" ]; then
+    DCC_SEGS+=("$DCC_SEG_OUT")
+    DCC_SEGW+=("$DCC_SEG_CELLS")
   fi
-  if [ "$DCC_JOIN_EMPTY" -eq 0 ]; then
-    dcc_paint "$DCC_SEP" "$DCC_ACCOUNT_COLOR"
-    DCC_JOINED="$DCC_JOINED$DCC_PAINTED"
-  fi
-  dcc_paint "$text" "$color" "$bold"
-  DCC_JOINED="$DCC_JOINED$DCC_PAINTED"
-  DCC_JOIN_EMPTY=0
+  dcc_seg_reset
+}
+
+dcc_line_build() { # dcc_line_build [max-cells] -> DCC_LINE_OUT, _CELLS, _DROPPED
+  local max="${1:-0}" i add used=0 sep
+  DCC_LINE_OUT=""; DCC_LINE_CELLS=0; DCC_LINE_DROPPED=0
+  [ "${#DCC_SEGS[@]}" -gt 0 ] || return 0
+  dcc_paint "$DCC_SEP" "${DCC_P_MUTE:-gray}" dim
+  sep="$DCC_PAINTED"
+  for i in "${!DCC_SEGS[@]}"; do
+    add=${DCC_SEGW[$i]}
+    [ -n "$DCC_LINE_OUT" ] && add=$(( add + DCC_SEP_CELLS ))
+    # Whole segments are dropped rather than any string being cut: a cut could
+    # sever an escape sequence and bleed colour across the rest of the row.
+    if [ "$max" -gt 0 ] && [ $(( used + add )) -gt "$max" ]; then
+      DCC_LINE_DROPPED=$(( DCC_LINE_DROPPED + 1 ))
+      continue
+    fi
+    [ -n "$DCC_LINE_OUT" ] && DCC_LINE_OUT="$DCC_LINE_OUT$sep"
+    DCC_LINE_OUT="$DCC_LINE_OUT${DCC_SEGS[$i]}"
+    used=$(( used + add ))
+  done
+  DCC_LINE_CELLS="$used"
 }
