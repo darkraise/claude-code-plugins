@@ -131,7 +131,7 @@ rowno=0
 while IFS= read -r row; do
   rowno=$(( rowno + 1 ))
   dcc_cells "$row"
-  check "framed row $rowno measures 100 cells" "$DCC_CELLS" "100"
+  check "framed row $rowno measures the inset width" "$DCC_CELLS" "98"
 done < <(printf '%s\n' "$out")
 
 # Nerd icon mode, framed: the only path that exercises detection cache ->
@@ -149,7 +149,7 @@ rowno=0
 while IFS= read -r row; do
   rowno=$(( rowno + 1 ))
   dcc_cells "$row"
-  check "framed nerd-mode row $rowno measures 100 cells" "$DCC_CELLS" "100"
+  check "framed nerd-mode row $rowno measures the inset width" "$DCC_CELLS" "98"
 done < <(printf '%s\n' "$out")
 
 check "the account address is on the top rule" \
@@ -178,6 +178,21 @@ cfgnf="$(mktemp)"; printf '{ "frame": "none" }' > "$cfgnf"
 out="$(COLUMNS=100 DCC_STATUSLINE_CONFIG="$cfgnf" bash "$SCRIPT" < "$F/full.json")"
 check "frame none renders two rows" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
 rm -f "$cfgnf"
+
+# --- the frame is inset from the reported terminal width ----------------------
+# Drawing to the full COLUMNS put the right wall past the visible edge of the
+# host's status-line region and clipped it.
+cfgm="$(mktemp)"; printf '{ "frameMargin": 6 }' > "$cfgm"
+top="$(DCC_STATUSLINE_CONFIG="$cfgm" COLUMNS=100 bash "$SCRIPT" < "$F/full.json" | sed -n 1p)"
+DCC_ICON_W=0
+dcc_cells "$top"
+check "a configured margin is honoured end to end" "$DCC_CELLS" "94"
+
+printf '{ "frameMargin": 0 }' > "$cfgm"
+top="$(DCC_STATUSLINE_CONFIG="$cfgm" COLUMNS=100 bash "$SCRIPT" < "$F/full.json" | sed -n 1p)"
+dcc_cells "$top"
+check "a margin of zero draws the full reported width" "$DCC_CELLS" "100"
+rm -f "$cfgm"
 
 rm -rf "$fakehome"
 finish

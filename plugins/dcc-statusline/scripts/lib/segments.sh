@@ -85,13 +85,17 @@ dcc_segment() { # dcc_segment <name> -> DCC_SEG_OUT, DCC_SEG_CELLS
     git)
       [ -n "$DCC_GIT_BRANCH" ] || return 0
       _dcc_icon "$DCC_I_GIT" "$DCC_P_GIT"
+      # The dirty marker and the counts render at normal weight, not dim. Dimmed
+      # against a dark background a saturated hue turns muddy and the numbers
+      # stop being readable, which defeats the point of showing them. The branch
+      # name still leads because it is the only bold piece here.
       dcc_seg_add "$DCC_GIT_BRANCH" "$DCC_P_GIT" bold
-      [ "$DCC_GIT_DIRTY" -eq 1 ] && dcc_seg_add "$DCC_GLYPH_DIRTY" "$DCC_P_GIT" dim
-      [ "$DCC_GIT_AHEAD"  -gt 0 ] && dcc_seg_add " $DCC_ARROW_UP$DCC_GIT_AHEAD" "$DCC_P_GIT" dim $(( 2 + ${#DCC_GIT_AHEAD} ))
-      [ "$DCC_GIT_BEHIND" -gt 0 ] && dcc_seg_add "$DCC_ARROW_DOWN$DCC_GIT_BEHIND" "$DCC_P_GIT" dim $(( 1 + ${#DCC_GIT_BEHIND} ))
-      [ "$DCC_GIT_STAGED"    -gt 0 ] && dcc_seg_add " $DCC_DOT_FILLED$DCC_GIT_STAGED" "$DCC_P_GIT" dim $(( 2 + ${#DCC_GIT_STAGED} ))
-      [ "$DCC_GIT_UNSTAGED"  -gt 0 ] && dcc_seg_add " $DCC_DOT_HOLLOW$DCC_GIT_UNSTAGED" "$DCC_P_GIT" dim $(( 2 + ${#DCC_GIT_UNSTAGED} ))
-      [ "$DCC_GIT_UNTRACKED" -gt 0 ] && dcc_seg_add " ?$DCC_GIT_UNTRACKED" "$DCC_P_GIT" dim
+      [ "$DCC_GIT_DIRTY" -eq 1 ] && dcc_seg_add "$DCC_GLYPH_DIRTY" "$DCC_P_GIT"
+      [ "$DCC_GIT_AHEAD"  -gt 0 ] && dcc_seg_add " $DCC_ARROW_UP$DCC_GIT_AHEAD" "$DCC_P_GIT" "" $(( 2 + ${#DCC_GIT_AHEAD} ))
+      [ "$DCC_GIT_BEHIND" -gt 0 ] && dcc_seg_add "$DCC_ARROW_DOWN$DCC_GIT_BEHIND" "$DCC_P_GIT" "" $(( 1 + ${#DCC_GIT_BEHIND} ))
+      [ "$DCC_GIT_STAGED"    -gt 0 ] && dcc_seg_add " $DCC_DOT_FILLED$DCC_GIT_STAGED" "$DCC_P_GIT" "" $(( 2 + ${#DCC_GIT_STAGED} ))
+      [ "$DCC_GIT_UNSTAGED"  -gt 0 ] && dcc_seg_add " $DCC_DOT_HOLLOW$DCC_GIT_UNSTAGED" "$DCC_P_GIT" "" $(( 2 + ${#DCC_GIT_UNSTAGED} ))
+      [ "$DCC_GIT_UNTRACKED" -gt 0 ] && dcc_seg_add " ?$DCC_GIT_UNTRACKED" "$DCC_P_GIT"
       ;;
     model)
       [ -n "$P_MODEL" ] || return 0

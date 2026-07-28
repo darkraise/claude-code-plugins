@@ -19,13 +19,20 @@ and above.
 
 Within every section, three weights separate what leads from what supports. The
 leaf directory, branch name, model, percentage, and cost figure are bold; icons,
-effort and meter labels are plain; the parent path, separators, git counters and
-units are dimmed.
+effort, meter labels and the git counters are plain; the parent path, separators
+and units are dimmed. The counters stay at plain weight on purpose — dimmed
+against a dark background a saturated hue turns muddy and the numbers stop being
+readable, which defeats the point of showing them.
 
 The frame needs to know the terminal width, which Claude Code supplies in
 `COLUMNS`. When that is missing, non-numeric, or narrower than 48 columns, the
 status line falls back to two unframed lines rather than drawing a box it cannot
 close.
+
+`COLUMNS` reports the terminal, but the region the host draws the status line
+into can be slightly narrower, and a box drawn to the full width has its right
+wall clipped. So the frame is held back by `frameMargin` cells, two by default.
+Raise it if the right edge still clips, or set it to `0` to use the full width.
 
 Text pulled from the payload — the directory, branch, model, and email — is
 measured in characters, not terminal cells. ASCII and the plugin's own glyphs
@@ -72,6 +79,7 @@ defaults.
 | `accounts` | Config directory in `~/...` form to `{ "color": <name> }` |
 | `glyphs` | `filled`, `empty`, and `dirty` characters |
 | `frame` | `auto`, `box`, or `none`; `box` currently behaves the same as `auto`, framing when `COLUMNS` allows |
+| `frameMargin` | Cells to hold the box back from the reported terminal width; default `2` |
 | `icons.mode` | `auto`, `nerd`, or `unicode`; `auto` uses the detected value |
 | `icons.width` | Cells an icon occupies, `1` or `2`; omit to use detection |
 | `palette` | Section name to colour: `dir`, `git`, `model`, `effort`, `fast`, `cost`, `mute` |
@@ -89,15 +97,27 @@ it is not. Detection runs at install time and again whenever the plugin updates,
 never during a render — the render path budgets five processes and cannot afford
 to probe fonts.
 
-The probe reads the terminal's own configured font face first, because that
-names the font actually doing the rendering. Only when that cannot be read does
-it fall back to scanning installed fonts, since a Nerd Font being installed does
-not mean your terminal uses it.
+Detection is deliberately conservative: icons are enabled only when the probe
+can identify the terminal it is running in and read that terminal's configured
+font. On Windows that means Windows Terminal, confirmed by `WT_SESSION`. Any
+host it cannot identify gets words.
 
-Icon width matters: a font named "Nerd Font" draws icons at two cells, while its
-"Nerd Font Mono" variant draws them at one. Getting this wrong shifts the box's
-right edge by one cell per icon. Set `icons.width` if the detected value is
-wrong, and run `/dcc-statusline doctor` to see what was detected.
+Scanning the machine's installed fonts is not treated as evidence. Having a Nerd
+Font installed never proved the terminal was using it, and trusting that turned
+every icon into a `?` on a host that was not Windows Terminal. The two mistakes
+are not equally cheap — guessing icons wrong makes the line unreadable, guessing
+words wrong only costs some polish — so an unrecognised host gets words and you
+turn icons on yourself:
+
+```json
+{ "icons": { "mode": "nerd" } }
+```
+
+Icon width matters when you do: a font named "Nerd Font" draws icons at two
+cells, while its "Nerd Font Mono" variant draws them at one. Getting this wrong
+shifts the box's right edge by one cell per icon. Set `icons.width` if the
+detected value is wrong, and run `/dcc-statusline doctor` to see what was
+detected.
 
 ## Design notes
 

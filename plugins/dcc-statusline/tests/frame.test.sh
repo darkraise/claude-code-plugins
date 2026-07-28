@@ -14,6 +14,11 @@ DCC_P_MUTE="gray"
 DCC_SEP=" | "
 dcc_sep_cells 3
 
+# The margin is exercised in its own block at the end of this file. Everything
+# before it tests the row arithmetic, which is clearer to read when the drawn
+# width and the reported width are the same number.
+DCC_FRAME_MARGIN=0
+
 # --- enablement ---------------------------------------------------------------
 DCC_FRAME_MODE="auto"; COLUMNS=100; dcc_frame_init
 check "auto with a usable width draws the box" "$DCC_FRAME_ON" "1"
@@ -83,5 +88,46 @@ printf -v icon '\357\200\207'
 dcc_frame_top "an-extremely-long-account-address@somewhere.example.com" "" 0
 dcc_cells "$DCC_FRAME_OUT"
 check "an over-long title still yields a 48-cell rule" "$DCC_CELLS" "48"
+
+# --- the margin holds the box back from the reported width --------------------
+# COLUMNS reports the terminal, but the host insets the region the status line
+# is drawn into, so drawing to the full width clipped the right wall.
+DCC_ICON_W=0
+COLUMNS=100; DCC_FRAME_MARGIN=2;  dcc_frame_init
+check "a margin of 2 draws two cells narrower" "$DCC_FRAME_COLS" "98"
+COLUMNS=100; DCC_FRAME_MARGIN=0;  dcc_frame_init
+check "a margin of 0 draws the full width"     "$DCC_FRAME_COLS" "100"
+COLUMNS=100; DCC_FRAME_MARGIN=10; dcc_frame_init
+check "a larger margin insets further"         "$DCC_FRAME_COLS" "90"
+
+COLUMNS=100; DCC_FRAME_MARGIN="wide"; dcc_frame_init
+check "a non-numeric margin falls back to 2"   "$DCC_FRAME_COLS" "98"
+
+# The minimum applies to the drawn width, not the reported one: a terminal wide
+# enough only before the inset must still fall back rather than draw a box
+# narrower than the minimum.
+COLUMNS=49; DCC_FRAME_MARGIN=2; dcc_frame_init
+check "the minimum is applied after the margin" "$DCC_FRAME_ON" "0"
+COLUMNS=50; DCC_FRAME_MARGIN=2; dcc_frame_init
+check "one cell wider clears the minimum"       "$DCC_FRAME_ON" "1"
+check "and draws at exactly the minimum"        "$DCC_FRAME_COLS" "48"
+
+# A margin at or beyond the terminal width must not produce a negative width.
+COLUMNS=60; DCC_FRAME_MARGIN=60; dcc_frame_init
+check "a margin as wide as the terminal falls back" "$DCC_FRAME_ON" "0"
+
+# Every row must still measure the drawn width, not the reported one.
+COLUMNS=100; DCC_FRAME_MARGIN=2; dcc_frame_init; dcc_frame_budget
+dcc_frame_top "someone@example.com" "" 0
+dcc_cells "$DCC_FRAME_OUT"
+check "a margined top rule measures the drawn width" "$DCC_CELLS" "98"
+dcc_line_reset; dcc_seg_add "alpha" cyan; dcc_line_push
+dcc_line_build "$DCC_FRAME_BUDGET"
+dcc_frame_row "$DCC_LINE_OUT" "$DCC_LINE_CELLS"
+dcc_cells "$DCC_FRAME_OUT"
+check "a margined content row measures the drawn width" "$DCC_CELLS" "98"
+dcc_frame_bottom
+dcc_cells "$DCC_FRAME_OUT"
+check "a margined bottom rule measures the drawn width" "$DCC_CELLS" "98"
 
 finish

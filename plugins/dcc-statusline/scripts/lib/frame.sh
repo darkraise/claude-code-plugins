@@ -21,10 +21,16 @@ DCC_FRAME_BUDGET=0
 DCC_FRAME_OUT=""
 
 dcc_frame_init() { # -> DCC_FRAME_ON, DCC_FRAME_COLS
-  local cols="${COLUMNS:-}"
+  local cols="${COLUMNS:-}" margin="${DCC_FRAME_MARGIN:-2}"
   DCC_FRAME_ON=0; DCC_FRAME_COLS=0
   [ "${DCC_FRAME_MODE:-auto}" = "none" ] && return 0
   case "$cols" in ''|*[!0-9]*) return 0 ;; esac
+  # COLUMNS reports the terminal, but the status line is drawn inside a region
+  # the host may inset. Drawing to the full width put the right wall past the
+  # visible edge and clipped it, so the box is held back by a small margin.
+  case "$margin" in ''|*[!0-9]*) margin=2 ;; esac
+  [ "$cols" -gt "$margin" ] || return 0
+  cols=$(( cols - margin ))
   [ "$cols" -ge "$DCC_FRAME_MIN" ] || return 0
   DCC_FRAME_COLS="$cols"
   DCC_FRAME_ON=1
