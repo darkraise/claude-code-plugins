@@ -592,7 +592,11 @@ dcc_detect() { # prints "<mode> <width>"
   fi
 
   list="$(_dcc_font_list)"
-  if printf '%s' "$list" | grep -qi -E 'nerd ?font|NerdFont|powerline'; then
+  # Windows registers Nerd Font families under the abbreviated NF, NFM and NFP
+  # names -- the registry reports "CaskaydiaMono NF Bold", never the spelled-out
+  # form -- so matching only "Nerd Font" would never fire on the one platform
+  # this fallback exists to serve.
+  if printf '%s' "$list" | grep -qi -E 'nerd ?font|nerdfont|powerline|(^|[[:space:]])NF[MP]?([[:space:]]|$)'; then
     printf 'nerd 2'
   else
     printf 'unicode 1'
