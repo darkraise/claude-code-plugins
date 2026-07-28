@@ -139,6 +139,17 @@ check "the account address is on the top rule" \
 check "the account address is not repeated inside" \
   "$(printf '%s\n' "$out" | sed -n 2p | strip_ansi | grep -c 'someone@example.com')" "0"
 
+# Regression: nothing stops a user putting "account" on line two, and the top
+# rule is drawn from P_EMAIL regardless of which line configured it. Stripping
+# only line one would render the address twice -- once on the rule, once
+# inline on line two. Counted across the whole (four-row) output, not per
+# line, since the bug is precisely that it appears on two different rows.
+cfg2="$(mktemp)"; printf '{ "lines": [["dir","model"],["ctx","account"]] }' > "$cfg2"
+out="$(COLUMNS=100 DCC_STATUSLINE_CONFIG="$cfg2" bash "$SCRIPT" < "$F/full.json")"
+check "the account address appears exactly once when configured on line two" \
+  "$(printf '%s\n' "$out" | strip_ansi | grep -o 'someone@example.com' | wc -l | tr -d ' ')" "1"
+rm -f "$cfg2"
+
 # Too narrow to frame: falls back to the plain two-line layout.
 out="$(COLUMNS=30 bash "$SCRIPT" < "$F/full.json")"
 check "a narrow terminal falls back to two rows" \

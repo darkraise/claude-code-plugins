@@ -34,6 +34,16 @@ _dcc_emit_line() { # _dcc_emit_line <segment-names>
   done
 }
 
+_dcc_strip_account() { # _dcc_strip_account <names> -> DCC_NAMES
+  local name out=""
+  DCC_NAMES=""
+  for name in $1; do
+    [ "$name" = "account" ] && continue
+    out="$out $name"
+  done
+  DCC_NAMES="${out# }"
+}
+
 dcc_main() {
   local names1 names2
 
@@ -63,10 +73,17 @@ dcc_main() {
 
   # Framed mode moves the account onto the top rule, so it must not also render
   # inside. Unframed mode leaves the line list exactly as configured.
+  #
+  # Both lines are stripped: nothing stops a user putting "account" on line two,
+  # and the top rule is drawn from P_EMAIL regardless of which line it was
+  # configured on, so stripping only line one renders the address twice.
+  #
+  # Matching is on whole words rather than by substring substitution, so a
+  # future segment name that merely contains "account" cannot be silently
+  # mangled.
   if [ "$DCC_FRAME_ON" -eq 1 ]; then
-    names1="${names1// account/}"
-    names1="${names1//account /}"
-    names1="${names1//account/}"
+    _dcc_strip_account "$names1"; names1="$DCC_NAMES"
+    _dcc_strip_account "$names2"; names2="$DCC_NAMES"
   fi
 
   # Collect git state only when a git segment is actually configured.
