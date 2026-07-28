@@ -61,6 +61,7 @@ check "defaults: usage meter width"             "$DCC_W_5H"  "8"
 check "defaults: ramp is sorted ascending"      "$DCC_RAMP"  "0:green: 50:yellow: 75:orange: 90:red:bold"
 check "defaults: no account entry means no tint" "$DCC_ACCOUNT_COLOR" ""
 check "defaults: frame mode"                    "$DCC_FRAME_MODE"    "auto"
+check "defaults: frame margin"                  "$DCC_FRAME_MARGIN"  "2"
 check "defaults: icon mode"                     "$DCC_ICON_MODE_CFG" "auto"
 check "defaults: icon width defers to detection" "$DCC_ICON_W_CFG"   "0"
 check "defaults: path palette"                  "$DCC_P_DIR"    "blue"
@@ -178,11 +179,13 @@ check "drift: the model survives a string percentage"    "$P_MODEL"   "Opus"
 cfg="$(mktemp)"
 cat > "$cfg" <<'JSON'
 { "frame": "none",
+  "frameMargin": 5,
   "icons": { "mode": "nerd", "width": 1 },
   "palette": { "dir": "green" } }
 JSON
 dcc_parse_all "$(cat "$F/full.json")" "$cfg" /dev/null
 check "user frame mode overrides"   "$DCC_FRAME_MODE"    "none"
+check "user frame margin overrides" "$DCC_FRAME_MARGIN"  "5"
 check "user icon mode overrides"    "$DCC_ICON_MODE_CFG" "nerd"
 check "user icon width overrides"   "$DCC_ICON_W_CFG"    "1"
 check "user palette entry overrides" "$DCC_P_DIR"        "green"
