@@ -87,6 +87,15 @@ check "an over-long line drops trailing segments" \
 check "the drop count is reported" "$DCC_LINE_DROPPED" "1"
 check "the surviving line fits the budget" "$DCC_LINE_CELLS" "11"
 
+# The scan is greedy, not trailing-only: an oversized middle segment is
+# skipped without stopping the scan, so a later, smaller segment can still
+# make it in.
+dcc_line_reset; seg aa green; seg wwwwwwwwwwwwwwwwwwww green; seg cc green
+dcc_line_build 10
+check "an oversized middle segment is skipped, a later one still fits" \
+  "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi)" "aa | cc"
+check "the skip is counted as a drop" "$DCC_LINE_DROPPED" "1"
+
 dcc_line_reset; seg aaaa green; seg bbbb green
 dcc_line_build 0
 check "a zero budget means unlimited" \

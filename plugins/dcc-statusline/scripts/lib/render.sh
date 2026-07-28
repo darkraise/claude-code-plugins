@@ -96,6 +96,11 @@ dcc_line_build() { # dcc_line_build [max-cells] -> DCC_LINE_OUT, _CELLS, _DROPPE
     [ -n "$DCC_LINE_OUT" ] && add=$(( add + DCC_SEP_CELLS ))
     # Whole segments are dropped rather than any string being cut: a cut could
     # sever an escape sequence and bleed colour across the rest of the row.
+    #
+    # The scan is greedy, not trailing-only: a segment too wide to fit is
+    # skipped and the scan continues, so a later smaller segment can survive an
+    # earlier larger one. That is deliberate -- one oversized branch name should
+    # not also cost the model and mode flags that would have fitted beside it.
     if [ "$max" -gt 0 ] && [ $(( used + add )) -gt "$max" ]; then
       DCC_LINE_DROPPED=$(( DCC_LINE_DROPPED + 1 ))
       continue
