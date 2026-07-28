@@ -1250,7 +1250,10 @@ done
 # --- a full line still fits ---------------------------------------------------
 COLUMNS=60; DCC_ICON_W=2; dcc_frame_init; dcc_frame_budget
 dcc_line_reset
-for n in 1 2 3 4 5 6 7 8; do dcc_seg_add "seg$n" cyan; dcc_line_push; done
+# Ten cells per segment, so eight of them plus their separators come to 101
+# cells against a budget of 56 and the line genuinely overflows. Four-cell
+# segments total only 53 and would fit, leaving this block asserting nothing.
+for n in 1 2 3 4 5 6 7 8; do dcc_seg_add "segment-0$n" cyan; dcc_line_push; done
 dcc_line_build "$DCC_FRAME_BUDGET"
 dcc_frame_row "$DCC_LINE_OUT" "$DCC_LINE_CELLS"
 dcc_cells "$DCC_FRAME_OUT"
