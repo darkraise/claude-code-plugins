@@ -32,7 +32,7 @@
     {
       "name": "dcc-statusline",
       "source": "./plugins/dcc-statusline",
-      "description": "A two-line status line: git detail, model and session state, plus context and rate-limit meters colored by usage level, with the line tinted by which Claude account the session belongs to.",
+      "description": "A Claude Code status line: git detail, model and session state, plus context and rate-limit meters colored by usage level, framed in the color of the Claude account the session belongs to.",
       "category": "productivity",
       "keywords": ["statusline", "status-line", "multi-account", "rate-limits", "context-window"]
     }
