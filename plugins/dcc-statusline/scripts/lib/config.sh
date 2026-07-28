@@ -15,7 +15,11 @@ DCC_DEFAULT_CONFIG='{
   "icons": { "mode": "auto", "width": 0 },
   "palette": {
     "dir": "blue", "git": "magenta", "model": "cyan",
-    "effort": "gray", "fast": "white", "cost": "141", "mute": "gray"
+    "effort": "gray", "fast": "white", "cost": "141", "mute": "gray",
+    "effortLevels": {
+      "low": "gray", "medium": "blue", "high": "cyan",
+      "xhigh": "141", "max": "magenta"
+    }
   },
   "meters": {
     "width": {"ctx":10,"5h":8,"7d":8},
@@ -59,6 +63,11 @@ DCC_JQ_PROG='
   @sh "DCC_P_GIT=\($c.palette.git // "magenta")",
   @sh "DCC_P_MODEL=\($c.palette.model // "cyan")",
   @sh "DCC_P_EFFORT=\($c.palette.effort // "gray")",
+  @sh "DCC_P_EFF_LOW=\($c.palette.effortLevels.low // "gray")",
+  @sh "DCC_P_EFF_MEDIUM=\($c.palette.effortLevels.medium // "blue")",
+  @sh "DCC_P_EFF_HIGH=\($c.palette.effortLevels.high // "cyan")",
+  @sh "DCC_P_EFF_XHIGH=\($c.palette.effortLevels.xhigh // "141")",
+  @sh "DCC_P_EFF_MAX=\($c.palette.effortLevels.max // "magenta")",
   @sh "DCC_P_FAST=\($c.palette.fast // "white")",
   @sh "DCC_P_COST=\($c.palette.cost // "141")",
   @sh "DCC_P_MUTE=\($c.palette.mute // "gray")",
@@ -134,6 +143,11 @@ DCC_P_DIR="blue"
 DCC_P_GIT="magenta"
 DCC_P_MODEL="cyan"
 DCC_P_EFFORT="gray"
+DCC_P_EFF_LOW="gray"
+DCC_P_EFF_MEDIUM="blue"
+DCC_P_EFF_HIGH="cyan"
+DCC_P_EFF_XHIGH="141"
+DCC_P_EFF_MAX="magenta"
 DCC_P_FAST="white"
 DCC_P_COST="141"
 DCC_P_MUTE="gray"

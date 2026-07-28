@@ -18,11 +18,30 @@ ramp: green below 50%, yellow to 74%, orange to 89%, then red and bold at 90%
 and above.
 
 Within every section, three weights separate what leads from what supports. The
-leaf directory, branch name, model, percentage, and cost figure are bold; icons,
-effort, meter labels and the git counters are plain; the parent path, separators
-and units are dimmed. The counters stay at plain weight on purpose — dimmed
-against a dark background a saturated hue turns muddy and the numbers stop being
-readable, which defeats the point of showing them.
+repository name, branch name, model, percentage, and cost figure are bold;
+icons, effort, meter labels, the path inside the repository and the git counters
+are plain; the path leading to the repository, separators and units are dimmed.
+The counters stay at plain weight on purpose — dimmed against a dark background
+a saturated hue turns muddy and the numbers stop being readable, which defeats
+the point of showing them.
+
+The path reads in those three tones so your eye lands in the same place at any
+depth. What leads to the repository recedes, the repository name is the anchor,
+and where you are inside it reads plainly:
+
+```
+/d/Repositories/Personal/claude-code-plugins/plugins/dcc-statusline
+└──────── dim ──────────┘└────── bold ─────┘└───────── plain ─────┘
+```
+
+Outside a repository the same rule applies with the containing directory dimmed
+and the current one bold.
+
+The reasoning effort is coloured by level — grey, blue, cyan, violet, magenta as
+it rises — on a progression that deliberately avoids the green-through-red the
+meters use. Sharing those hues would let one colour mean two things on the same
+line: near a limit, or simply set to `max`. Override any of them under
+`palette.effortLevels`.
 
 The frame needs to know the terminal width, which Claude Code supplies in
 `COLUMNS`. When that is missing, non-numeric, or narrower than 48 columns, the
@@ -84,6 +103,7 @@ defaults.
 | `icons.mode` | `auto`, `nerd`, or `unicode`; `auto` uses the detected value |
 | `icons.width` | Cells an icon occupies, `1` or `2`; omit to use detection |
 | `palette` | Section name to colour: `dir`, `git`, `model`, `effort`, `fast`, `cost`, `mute` |
+| `palette.effortLevels` | Colour per reasoning effort: `low`, `medium`, `high`, `xhigh`, `max` |
 
 Segment names: `dir`, `git`, `model`, `effort`, `fast`, `agent`, `style`,
 `account`, `ctx`, `cost`, `5h`, `7d`. Unknown names are ignored.

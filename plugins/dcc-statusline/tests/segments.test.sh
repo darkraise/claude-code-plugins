@@ -22,6 +22,8 @@ DCC_I_DIR=""; DCC_I_GIT=""; DCC_I_MODEL=""; DCC_I_FAST=""
 DCC_I_ACCOUNT=""; DCC_I_CTX=""; DCC_I_CLOCK=""; DCC_I_COST=""
 DCC_P_DIR="blue"; DCC_P_GIT="magenta"; DCC_P_MODEL="cyan"
 DCC_P_EFFORT="gray"; DCC_P_FAST="white"; DCC_P_COST="141"; DCC_P_MUTE="gray"
+DCC_P_EFF_LOW="gray"; DCC_P_EFF_MEDIUM="blue"; DCC_P_EFF_HIGH="cyan"
+DCC_P_EFF_XHIGH="141"; DCC_P_EFF_MAX="magenta"
 
 seg() { # seg <name> -> the visible text of that segment
   dcc_seg_reset
@@ -33,11 +35,11 @@ segcells() { dcc_seg_reset; dcc_segment "$1"; printf '%s' "$DCC_SEG_CELLS"; }
 # --- dir ----------------------------------------------------------------------
 P_CWD="D:/Repositories/Personal/claude-code-plugins/plugins"
 DCC_GIT_ROOT="D:/Repositories/Personal/claude-code-plugins"
-check "inside a repo, dir is repo-relative" "$(seg dir)" "claude-code-plugins/plugins"
+check "inside a repo, dir shows the full path" "$(seg dir)" "/d/Repositories/Personal/claude-code-plugins/plugins"
 
 DCC_GIT_ROOT="D:/Repositories/Personal/claude-code-plugins"
 P_CWD="D:/Repositories/Personal/claude-code-plugins"
-check "at the repo root, dir is the repo name" "$(seg dir)" "claude-code-plugins"
+check "at the repo root, dir anchors on the repo name" "$(seg dir)" "/d/Repositories/Personal/claude-code-plugins"
 
 DCC_GIT_ROOT=""
 HOME="/home/u"; P_CWD="/home/u/projects/thing"
@@ -55,14 +57,14 @@ for spelling in "D:/Repositories/Personal/claude-code-plugins/plugins" \
                 'D:\Repositories\Personal\claude-code-plugins\plugins' \
                 "/d/Repositories/Personal/claude-code-plugins/plugins"; do
   P_CWD="$spelling"
-  check "inside a repo, [$spelling] is repo-relative" "$(seg dir)" "claude-code-plugins/plugins"
+  check "inside a repo, [$spelling] shows the full path" "$(seg dir)" "/d/Repositories/Personal/claude-code-plugins/plugins"
 done
 
 for spelling in "D:/Repositories/Personal/claude-code-plugins" \
                 'D:\Repositories\Personal\claude-code-plugins' \
                 "/d/Repositories/Personal/claude-code-plugins"; do
   P_CWD="$spelling"
-  check "at the repo root, [$spelling] is the repo name" "$(seg dir)" "claude-code-plugins"
+  check "at the repo root, [$spelling] anchors on the repo name" "$(seg dir)" "/d/Repositories/Personal/claude-code-plugins"
 done
 
 DCC_GIT_ROOT=""
@@ -196,12 +198,59 @@ done
 esc=$'\033'
 P_CWD="/repo/claude-code-plugins/plugins"; DCC_GIT_ROOT="/repo/claude-code-plugins"
 dcc_seg_reset; dcc_segment dir
-dimparent="no"
-printf '%s' "$DCC_SEG_OUT" | grep -qF "${esc}[2;38;5;12mclaude-code-plugins/" && dimparent="yes"
-boldleaf="no"
-printf '%s' "$DCC_SEG_OUT" | grep -qF "${esc}[1;38;5;12mplugins" && boldleaf="yes"
-check "the dim weight wraps the parent path"     "$dimparent" "yes"
-check "the bold weight wraps the leaf directory" "$boldleaf"  "yes"
+dimancestry="no"
+printf '%s' "$DCC_SEG_OUT" | grep -qF "${esc}[2;38;5;12m/repo/" && dimancestry="yes"
+boldrepo="no"
+printf '%s' "$DCC_SEG_OUT" | grep -qF "${esc}[1;38;5;12mclaude-code-plugins" && boldrepo="yes"
+plainsub="no"
+printf '%s' "$DCC_SEG_OUT" | grep -qF "${esc}[38;5;12m/plugins" && plainsub="yes"
+check "the dim weight wraps what leads to the repo" "$dimancestry" "yes"
+check "the bold weight wraps the repo name"         "$boldrepo"    "yes"
+check "the plain weight wraps the path inside it"   "$plainsub"    "yes"
+
+# At the repository root there is no path inside it, so the anchor is the last
+# thing on the segment -- the case the old repo-relative form could not show,
+# because it printed the repo name alone with no indication of where it lives.
+P_CWD="/repo/claude-code-plugins"; DCC_GIT_ROOT="/repo/claude-code-plugins"
+dcc_seg_reset; dcc_segment dir
+check "at the repo root the ancestry is still shown" \
+  "$(printf '%s' "$DCC_SEG_OUT" | strip_ansi)" "/repo/claude-code-plugins"
+rootdim="no"
+printf '%s' "$DCC_SEG_OUT" | grep -qF "${esc}[2;38;5;12m/repo/" && rootdim="yes"
+rootbold="no"
+printf '%s' "$DCC_SEG_OUT" | grep -qF "${esc}[1;38;5;12mclaude-code-plugins" && rootbold="yes"
+check "and the ancestry is dim at the root too" "$rootdim"  "yes"
+check "and the repo name is still the anchor"   "$rootbold" "yes"
+
+# A repository directly under the filesystem root still has ancestry -- the
+# leading slash itself -- and must show it rather than swallowing it.
+P_CWD="/solo"; DCC_GIT_ROOT="/solo"
+dcc_seg_reset; dcc_segment dir
+check "a repo under the filesystem root keeps its leading slash" \
+  "$(printf '%s' "$DCC_SEG_OUT" | strip_ansi)" "/solo"
+
+# When the repository name is the whole path there is genuinely nothing above
+# it, and the segment must not invent a separator. $HOME abbreviates to "~", so
+# a repository at $HOME is exactly this case.
+P_CWD="$HOME"; DCC_GIT_ROOT="$HOME"
+dcc_seg_reset; dcc_segment dir
+check "a repo at HOME renders as a bare tilde" \
+  "$(printf '%s' "$DCC_SEG_OUT" | strip_ansi)" "~"
+
+# --- effort colour by level ---------------------------------------------------
+# Each level takes its own colour on a cool-to-vivid progression, and an
+# unrecognised level falls back to the plain effort colour rather than being
+# dropped or rendered uncoloured.
+effcolour() { P_EFFORT="$1"; dcc_seg_reset; dcc_segment effort
+  printf '%s' "$DCC_SEG_OUT" | sed -E "s/^${esc}\[([0-9;]*)m.*/\1/"; }
+check "low effort is grey"        "$(effcolour low)"    "38;5;245"
+check "medium effort is blue"     "$(effcolour medium)" "38;5;12"
+check "high effort is cyan"       "$(effcolour high)"   "38;5;14"
+check "xhigh effort is violet"    "$(effcolour xhigh)"  "38;5;141"
+check "max effort is magenta"     "$(effcolour max)"    "38;5;13"
+check "an unknown level falls back" "$(effcolour weird)" "38;5;245"
+check "an absent level renders nothing" "$(effcolour '')" ""
+P_EFFORT="xhigh"
 
 # --- icon cell accounting -----------------------------------------------------
 check "unicode mode charges no cells for an icon" "$(segcells model)" "4"
