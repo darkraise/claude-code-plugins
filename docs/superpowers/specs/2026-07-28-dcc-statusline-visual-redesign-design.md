@@ -98,7 +98,15 @@ mistaken for a usage reading.
 | `fast` | white | 15 |
 | `cost` | violet | 141 |
 | `ctx`, `5h`, `7d` | usage ramp, unchanged | 10 / 11 / 208 / 9 |
-| frame, account | account tint | per `accounts` config |
+| frame | account tint | per `accounts` config |
+| `account` chip | account tint, but only when unframed | per `accounts` config |
+
+The account chip is a special case. In framed mode it does not render at all —
+the address moves onto the top rule and the frame carries the identity. It
+therefore only appears when the frame is off, and in that mode it takes the
+account tint rather than the muted grey. Without that, a terminal too narrow to
+frame, or a host that does not set `COLUMNS`, would carry no at-a-glance account
+signal whatsoever, which is the single thing this plugin exists to provide.
 
 The ramp keeps its existing four stops: green below 50, yellow to 74, orange to
 89, then red and bold from 90.
