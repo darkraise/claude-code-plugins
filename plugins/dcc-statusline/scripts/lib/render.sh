@@ -4,7 +4,7 @@ set -uo pipefail
 
 DCC_RAMP_COLOR=""
 DCC_RAMP_BOLD=""
-DCC_BAR=""
+DCC_BAR_ON=""; DCC_BAR_OFF=""; DCC_BAR_ON_N=0; DCC_BAR_OFF_N=0
 DCC_ETA=""
 DCC_JOINED=""
 DCC_JOIN_EMPTY=1
@@ -23,9 +23,9 @@ dcc_ramp() { # dcc_ramp <pct> -> DCC_RAMP_COLOR, DCC_RAMP_BOLD
   done
 }
 
-dcc_bar() { # dcc_bar <pct> <width> -> DCC_BAR
-  local pct="${1:-}" width="${2:-0}" filled i out=""
-  DCC_BAR=""
+dcc_bar() { # dcc_bar <pct> <width> -> DCC_BAR_ON/OFF and their cell counts
+  local pct="${1:-}" width="${2:-0}" filled i
+  DCC_BAR_ON=""; DCC_BAR_OFF=""; DCC_BAR_ON_N=0; DCC_BAR_OFF_N=0
   [ -n "$pct" ] || return 0
   [ "$width" -gt 0 ] 2>/dev/null || return 0
   filled=$(( (pct * width + 50) / 100 ))
@@ -35,10 +35,10 @@ dcc_bar() { # dcc_bar <pct> <width> -> DCC_BAR
   [ "$filled" -ge "$width" ] && [ "$pct" -lt 100 ] && filled=$(( width - 1 ))
   [ "$filled" -lt 0 ] && filled=0
   [ "$filled" -gt "$width" ] && filled="$width"
-  for (( i = 0; i < width; i++ )); do
-    if [ "$i" -lt "$filled" ]; then out="$out$DCC_GLYPH_FILLED"; else out="$out$DCC_GLYPH_EMPTY"; fi
-  done
-  DCC_BAR="[$out]"
+  for (( i = 0; i < filled; i++ )); do DCC_BAR_ON="$DCC_BAR_ON$DCC_GLYPH_FILLED"; done
+  for (( i = filled; i < width; i++ )); do DCC_BAR_OFF="$DCC_BAR_OFF$DCC_GLYPH_EMPTY"; done
+  DCC_BAR_ON_N="$filled"
+  DCC_BAR_OFF_N=$(( width - filled ))
 }
 
 dcc_eta() { # dcc_eta <seconds-until-reset> -> DCC_ETA

@@ -24,14 +24,15 @@ dcc_ramp 89;  check "lower ramp stops are not bold" "$DCC_RAMP_BOLD" ""
 dcc_ramp "";  check "empty percentage yields no ramp color" "$DCC_RAMP_COLOR" ""
 
 # --- bar fill and clamps ------------------------------------------------------
-dcc_bar 0 10;   check "0% is an empty bar"                 "$DCC_BAR" "[..........]"
-dcc_bar 1 10;   check "1% still shows one filled cell"     "$DCC_BAR" "[#.........]"
-dcc_bar 47 10;  check "47% rounds to five cells"           "$DCC_BAR" "[#####.....]"
-dcc_bar 99 10;  check "99% still shows one empty cell"     "$DCC_BAR" "[#########.]"
-dcc_bar 100 10; check "100% is a full bar"                 "$DCC_BAR" "[##########]"
-dcc_bar 50 8;   check "width is honored"                   "$DCC_BAR" "[####....]"
-dcc_bar 50 0;   check "zero width yields no bar"           "$DCC_BAR" ""
-dcc_bar "" 10;  check "empty percentage yields no bar"     "$DCC_BAR" ""
+bar() { dcc_bar "$1" "$2"; printf '%s|%s|%s|%s' "$DCC_BAR_ON" "$DCC_BAR_OFF" "$DCC_BAR_ON_N" "$DCC_BAR_OFF_N"; }
+check "0% fills nothing"                 "$(bar 0 10)"   "|..........|0|10"
+check "1% still fills one cell"          "$(bar 1 10)"   "#|.........|1|9"
+check "47% rounds to five cells"         "$(bar 47 10)"  "#####|.....|5|5"
+check "99% still leaves one empty cell"  "$(bar 99 10)"  "#########|.|9|1"
+check "100% fills every cell"            "$(bar 100 10)" "##########||10|0"
+check "width is honored"                 "$(bar 50 8)"   "####|....|4|4"
+check "zero width yields no bar"         "$(bar 50 0)"   "||0|0"
+check "empty percentage yields no bar"   "$(bar '' 10)"  "||0|0"
 
 # --- countdown formatting -----------------------------------------------------
 dcc_eta 500400; check "multi-day countdown"      "$DCC_ETA" "5d19h"
