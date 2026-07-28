@@ -20,8 +20,10 @@ plugins authored by Darkraise. Users add it with
 - **Explicit relative sources** (`"source": "./plugins/<plugin>"`) rather than
   `metadata.pluginRoot`. The docs are ambiguous about how `pluginRoot` combines with
   the required `./` prefix, so explicit paths remove the ambiguity.
-- **One example plugin** (`example-plugin`) ships as a copy-ready template with a
-  slash command and a skill, so new plugins start from a working reference.
+- **No template plugin.** The marketplace originally shipped `example-plugin` as a
+  copy-ready starting point. It was removed once the real plugins covered every
+  component type between them, since a working plugin is a better reference than a
+  toy one and one fewer entry has to be kept current.
 - **Standard component directories are auto-discovered**, so `plugin.json` omits the
   `commands`/`skills` path fields and stays minimal.
 - **CI** runs `claude plugin validate .` on every push to `main` and every pull
@@ -31,7 +33,7 @@ plugins authored by Darkraise. Users add it with
 
 ```
 .claude-plugin/marketplace.json   Marketplace manifest
-plugins/example-plugin/           Template plugin (command + skill)
+plugins/<plugin>/                 One directory per plugin
 .github/workflows/validate.yml    CI validation
 README.md  LICENSE (MIT)  .gitignore
 ```
