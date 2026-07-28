@@ -21,14 +21,18 @@ DCC_FRAME_BUDGET=0
 DCC_FRAME_OUT=""
 
 dcc_frame_init() { # -> DCC_FRAME_ON, DCC_FRAME_COLS
-  local cols="${COLUMNS:-}" margin="${DCC_FRAME_MARGIN:-2}"
+  local cols="${COLUMNS:-}" margin="${DCC_FRAME_MARGIN:-4}"
   DCC_FRAME_ON=0; DCC_FRAME_COLS=0
   [ "${DCC_FRAME_MODE:-auto}" = "none" ] && return 0
   case "$cols" in ''|*[!0-9]*) return 0 ;; esac
   # COLUMNS reports the terminal, but the status line is drawn inside a region
-  # the host may inset. Drawing to the full width put the right wall past the
-  # visible edge and clipped it, so the box is held back by a small margin.
-  case "$margin" in ''|*[!0-9]*) margin=2 ;; esac
+  # narrower than that, so drawing to the full width gets the right end cut off.
+  #
+  # Measured by rendering a column ruler through the real status line at
+  # COLUMNS=280: the host indents the row by 2 columns and then truncates the
+  # tail with an ellipsis, leaving 276 usable columns. Hence a default margin of
+  # 4 rather than 2 -- two for the indent, two so the last cell is never written.
+  case "$margin" in ""|*[!0-9]*) margin=4 ;; esac
   [ "$cols" -gt "$margin" ] || return 0
   cols=$(( cols - margin ))
   [ "$cols" -ge "$DCC_FRAME_MIN" ] || return 0

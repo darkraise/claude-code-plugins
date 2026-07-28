@@ -131,7 +131,7 @@ rowno=0
 while IFS= read -r row; do
   rowno=$(( rowno + 1 ))
   dcc_cells "$row"
-  check "framed row $rowno measures the inset width" "$DCC_CELLS" "98"
+  check "framed row $rowno measures the inset width" "$DCC_CELLS" "96"
 done < <(printf '%s\n' "$out")
 
 # Nerd icon mode, framed: the only path that exercises detection cache ->
@@ -149,7 +149,7 @@ rowno=0
 while IFS= read -r row; do
   rowno=$(( rowno + 1 ))
   dcc_cells "$row"
-  check "framed nerd-mode row $rowno measures the inset width" "$DCC_CELLS" "98"
+  check "framed nerd-mode row $rowno measures the inset width" "$DCC_CELLS" "96"
 done < <(printf '%s\n' "$out")
 
 check "the account address is on the top rule" \
