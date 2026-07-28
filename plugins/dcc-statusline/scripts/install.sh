@@ -70,31 +70,16 @@ dcc_uninstall_one() { # dcc_uninstall_one <config-dir>
   _dcc_edit_settings "$1" 'del(.statusLine)'
 }
 
-dcc_seed_config() {
+dcc_seed_config() { # seeds only what is genuinely per-machine -- everything
+  # presentational (lines, glyphs, meters, ...) already has a default in
+  # lib/config.sh and must keep tracking it, never fork into a stale copy here.
   _dcc_paths
   local cfg="$DCC_HOME_DIR/.claude/dcc-statusline.json"
   [ -f "$cfg" ] && return 0
   mkdir -p "$DCC_HOME_DIR/.claude" || return 0
   cat > "$cfg" <<'JSON'
 {
-  "lines": [
-    ["dir", "git", "model", "effort", "fast", "think", "agent", "style", "account"],
-    ["ctx", "cost", "5h", "7d"]
-  ],
-  "separator": "  ·  ",
-  "meters": {
-    "width": { "ctx": 10, "5h": 8, "7d": 8 },
-    "showEta": true,
-    "showTokens": true,
-    "ramp": [
-      { "at": 0,  "color": "green" },
-      { "at": 50, "color": "yellow" },
-      { "at": 75, "color": "orange" },
-      { "at": 90, "color": "red", "bold": true }
-    ]
-  },
-  "accounts": {},
-  "glyphs": { "filled": "█", "empty": "░", "dirty": "*" }
+  "accounts": {}
 }
 JSON
 }
