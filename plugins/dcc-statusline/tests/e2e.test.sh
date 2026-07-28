@@ -134,6 +134,24 @@ while IFS= read -r row; do
   check "framed row $rowno measures 100 cells" "$DCC_CELLS" "100"
 done < <(printf '%s\n' "$out")
 
+# Nerd icon mode, framed: the only path that exercises detection cache ->
+# dcc_icons_init -> segments charging DCC_ICON_W cells per icon -> dcc_frame_top
+# receiving the icon and its width, all at once. Every other check in this file
+# forces DCC_ICONS=unicode, so a mischarge anywhere on that chain would pass
+# unnoticed. DCC_ICON_W=2 below matches the width dcc_icons_init defaults to
+# for nerd mode when no cache or config overrides it (see lib/icons.sh).
+out="$(COLUMNS=100 DCC_ICONS=nerd bash "$SCRIPT" < "$F/full.json")"
+check "a framed nerd-mode render prints four rows" \
+  "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "4"
+
+DCC_ICON_W=2
+rowno=0
+while IFS= read -r row; do
+  rowno=$(( rowno + 1 ))
+  dcc_cells "$row"
+  check "framed nerd-mode row $rowno measures 100 cells" "$DCC_CELLS" "100"
+done < <(printf '%s\n' "$out")
+
 check "the account address is on the top rule" \
   "$(printf '%s\n' "$out" | sed -n 1p | strip_ansi | grep -c 'someone@example.com')" "1"
 check "the account address is not repeated inside" \
