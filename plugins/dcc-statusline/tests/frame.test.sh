@@ -101,7 +101,7 @@ COLUMNS=100; DCC_FRAME_MARGIN=10; dcc_frame_init
 check "a larger margin insets further"         "$DCC_FRAME_COLS" "90"
 
 COLUMNS=100; DCC_FRAME_MARGIN="wide"; dcc_frame_init
-check "a non-numeric margin falls back to 2"   "$DCC_FRAME_COLS" "98"
+check "a non-numeric margin falls back to 4"   "$DCC_FRAME_COLS" "96"
 
 # The minimum applies to the drawn width, not the reported one: a terminal wide
 # enough only before the inset must still fall back rather than draw a box

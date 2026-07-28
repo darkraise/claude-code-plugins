@@ -31,7 +31,8 @@ close.
 
 `COLUMNS` reports the terminal, but the region the host draws the status line
 into can be slightly narrower, and a box drawn to the full width has its right
-wall clipped. So the frame is held back by `frameMargin` cells, two by default.
+wall clipped. So the frame is held back by `frameMargin` cells, four by default:
+two for a left indent the host adds, two so the final cell is never written.
 Raise it if the right edge still clips, or set it to `0` to use the full width.
 
 Text pulled from the payload — the directory, branch, model, and email — is
@@ -79,7 +80,7 @@ defaults.
 | `accounts` | Config directory in `~/...` form to `{ "color": <name> }` |
 | `glyphs` | `filled`, `empty`, and `dirty` characters |
 | `frame` | `auto`, `box`, or `none`; `box` currently behaves the same as `auto`, framing when `COLUMNS` allows |
-| `frameMargin` | Cells to hold the box back from the reported terminal width; default `2` |
+| `frameMargin` | Cells to hold the box back from the reported terminal width; default `4` |
 | `icons.mode` | `auto`, `nerd`, or `unicode`; `auto` uses the detected value |
 | `icons.width` | Cells an icon occupies, `1` or `2`; omit to use detection |
 | `palette` | Section name to colour: `dir`, `git`, `model`, `effort`, `fast`, `cost`, `mute` |

@@ -11,7 +11,7 @@ DCC_DEFAULT_CONFIG='{
   ],
   "separator": "  \u00b7  ",
   "frame": "auto",
-  "frameMargin": 2,
+  "frameMargin": 4,
   "icons": { "mode": "auto", "width": 0 },
   "palette": {
     "dir": "blue", "git": "magenta", "model": "cyan",
@@ -52,7 +52,7 @@ DCC_JQ_PROG='
   @sh "DCC_LINE2=\($c.lines[1] // [] | join(" "))",
   @sh "DCC_SEP=\($c.separator)",
   @sh "DCC_FRAME_MODE=\($c.frame // "auto")",
-  @sh "DCC_FRAME_MARGIN=\(num($c.frameMargin; 2))",
+  @sh "DCC_FRAME_MARGIN=\(num($c.frameMargin; 4))",
   @sh "DCC_ICON_MODE_CFG=\($c.icons.mode // "auto")",
   @sh "DCC_ICON_W_CFG=\(num($c.icons.width; 0))",
   @sh "DCC_P_DIR=\($c.palette.dir // "blue")",
@@ -127,7 +127,7 @@ DCC_LINE1=""
 DCC_LINE2=""
 printf -v DCC_SEP '  \302\267  '   # U+00B7 middle dot
 DCC_FRAME_MODE="auto"
-DCC_FRAME_MARGIN=2
+DCC_FRAME_MARGIN=4
 DCC_ICON_MODE_CFG="auto"
 DCC_ICON_W_CFG=0
 DCC_P_DIR="blue"
