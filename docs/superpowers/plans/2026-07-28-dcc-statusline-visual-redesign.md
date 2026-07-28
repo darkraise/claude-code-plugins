@@ -647,8 +647,8 @@ check "47% rounds to five cells"         "$(bar 47 10)"  "#####|.....|5|5"
 check "99% still leaves one empty cell"  "$(bar 99 10)"  "#########|.|9|1"
 check "100% fills every cell"            "$(bar 100 10)" "##########||10|0"
 check "width is honored"                 "$(bar 50 8)"   "####|....|4|4"
-check "zero width yields no bar"         "$(bar 50 0)"   "|||0|0"
-check "empty percentage yields no bar"   "$(bar '' 10)"  "|||0|0"
+check "zero width yields no bar"         "$(bar 50 0)"   "||0|0"
+check "empty percentage yields no bar"   "$(bar '' 10)"  "||0|0"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
