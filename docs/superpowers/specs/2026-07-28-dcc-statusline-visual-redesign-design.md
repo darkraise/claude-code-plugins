@@ -69,7 +69,7 @@ width is a configurable number rather than an inference.
 | When to detect the font | Once, at install and on the version-change sync hook | The render path budgets five processes and must not fork to probe fonts |
 | How the render learns the result | Reads a one-word cache file with the `read` builtin | Costs no process |
 | Which font signal wins | The terminal's configured face, when readable; installed fonts only as fallback | An installed Nerd Font does not prove the terminal uses it |
-| Overflow policy | Drop whole sections from the end | Cutting a string mid-way risks severing an escape sequence and bleeding color across the row |
+| Overflow policy | Drop whole sections, greedily: keep every section that still fits, skip the ones that do not | Cutting a string mid-way risks severing an escape sequence and bleeding color across the row. Greedy rather than trailing-only because one oversized branch name should not also cost the model, effort and mode flags that would have fit |
 | When `COLUMNS` is absent or tiny | Fall back to the unframed two-line layout | Better than drawing a box that cannot close |
 | Source encoding of glyphs | Octal UTF-8 byte escapes | Keeps every script pure ASCII and immune to editors, pipes and terminals that mangle the private-use area |
 | `think` segment | Removed from defaults and from the segment dispatcher | Redundant beside `effort`; unknown segment names are already ignored, so an existing config listing it degrades to nothing |
@@ -182,10 +182,21 @@ each row in cells, and asserts it equals `COLUMNS`. The prototype passes this at
 
 ## Overflow
 
-When a content line exceeds `C - 4` cells, whole segments are dropped from the
-end of that line until it fits. Segments are never cut mid-string, because a cut
-could sever an escape sequence and bleed color across the remainder of the row.
-Each line is padded to the right wall so both content rows align.
+When a content line exceeds `C - 4` cells, whole segments are dropped until it
+fits. The scan is greedy rather than trailing-only: segments are considered in
+render order, each is kept if it still fits within the remaining budget, and
+skipped if it does not. A later, smaller segment may therefore survive an
+earlier, larger one that was skipped, so the surviving set is not always a
+prefix of the configured order.
+
+That is the intended behaviour, not an accident of the loop. A single oversized
+branch name should cost you the branch, not also the model, effort and mode
+flags that would have fitted beside it. Each segment carries its own hue and
+icon, so a gap in the order is unambiguous to read.
+
+Segments are never cut mid-string, because a cut could sever an escape sequence
+and bleed color across the remainder of the row. Each line is padded to the
+right wall so both content rows align.
 
 ## Configuration
 
@@ -230,7 +241,7 @@ path.
 | Area | Coverage |
 |------|----------|
 | Frame width | Strip escapes, measure cells, assert every row equals `COLUMNS`, at 48 / 60 / 72 / 90 / 110 columns and both icon widths |
-| Overflow | Assert sections drop from the end and that no escape sequence is ever split |
+| Overflow | Assert whole sections are dropped and no escape sequence is ever split, including the non-monotonic case where an oversized middle section is skipped while a later, smaller one is kept |
 | Fallback | `COLUMNS` unset, empty, non-numeric, and below the minimum all produce the unframed two-line layout |
 | Locale | Width assertions run with the locale unset, proving the script sets its own |
 | Detection | Fixture Windows Terminal settings with a Nerd face, a non-Nerd face, a missing file, and a corrupt file; fixture font lists; precedence between signals |

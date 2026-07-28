@@ -763,7 +763,7 @@ check "an explicit cell count wins" "$DCC_LINE_CELLS" "2"
 # --- overflow -----------------------------------------------------------------
 dcc_line_reset; seg aaaa green; seg bbbb green; seg cccc green
 dcc_line_build 12
-check "an over-long line drops trailing segments" \
+check "an over-long line drops the segments that do not fit" \
   "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi)" "aaaa | bbbb"
 check "the drop count is reported" "$DCC_LINE_DROPPED" "1"
 check "the surviving line fits the budget" "$DCC_LINE_CELLS" "11"
@@ -842,6 +842,11 @@ dcc_line_build() { # dcc_line_build [max-cells] -> DCC_LINE_OUT, _CELLS, _DROPPE
     [ -n "$DCC_LINE_OUT" ] && add=$(( add + DCC_SEP_CELLS ))
     # Whole segments are dropped rather than any string being cut: a cut could
     # sever an escape sequence and bleed colour across the rest of the row.
+    #
+    # The scan is greedy, not trailing-only: a segment too wide to fit is
+    # skipped and the scan continues, so a later smaller segment can survive an
+    # earlier larger one. That is deliberate -- one oversized branch name should
+    # not also cost the model and mode flags that would have fitted beside it.
     if [ "$max" -gt 0 ] && [ $(( used + add )) -gt "$max" ]; then
       DCC_LINE_DROPPED=$(( DCC_LINE_DROPPED + 1 ))
       continue
