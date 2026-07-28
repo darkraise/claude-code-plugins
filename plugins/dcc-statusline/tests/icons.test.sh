@@ -31,6 +31,8 @@ check "nerd mode populates the branch glyph" \
 DCC_ICON_MODE_CFG="unicode"
 dcc_icons_init
 check "config mode outranks the cache" "$DCC_ICON_MODE" "unicode"
+check "switching back to unicode clears the folder glyph" "$DCC_I_DIR" ""
+check "switching back to unicode clears the branch glyph" "$DCC_I_GIT" ""
 DCC_ICON_MODE_CFG="auto"
 
 DCC_ICON_W_CFG=1
