@@ -34,7 +34,7 @@
 | `plugins/dcc-statusline/scripts/lib/jq-prog.sh` | The single jq program, the default config, and the theme table |
 | `plugins/dcc-statusline/scripts/lib/validate.sh` | Config diagnostics. Off the render path. Forks freely |
 | `plugins/dcc-statusline/scripts/preview.sh` | Renders the real config at several widths |
-| `plugins/dcc-statusline/dcc-statusline.schema.json` | JSON Schema for the config file |
+| `plugins/dcc-statusline/scripts/dcc-statusline.schema.json` | JSON Schema for the config file, and the single source of truth for valid key, segment and theme names |
 | `plugins/dcc-statusline/tests/tiers.test.sh` | Per-segment tier renderings and monotonic shrink |
 | `plugins/dcc-statusline/tests/theme.test.sh` | Theme table and merge order |
 | `plugins/dcc-statusline/tests/validate.test.sh` | Diagnostics, plus the budget-boundary assertion |
@@ -394,13 +394,13 @@ check "ctx tier 2 narrows further and drops the suffix" "$(segt ctx 2)" \
   "ctx ##.. 47%"
 check "ctx tier 3 drops the bar entirely" "$(segt ctx 3)" "ctx 47%"
 
-# A meter configured to width 2 scales to a single cell at tier 2 rather than
-# rounding its bar away entirely; only tier 3 removes a bar. dcc_bar's existing
-# "never look full below 100%" clamp then empties that one cell, which is
-# degenerate but honest -- a one-cell bar cannot show both states, and the
-# percentage beside it carries the reading regardless.
+# A meter configured to width 2 scales below two cells at tier 2. A one-cell bar
+# cannot show both states -- dcc_bar's "never look full below 100%" clamp empties
+# it, so it would read as 0% at 47% -- so the bar is dropped instead of shown
+# misleadingly, and the percentage carries the reading alone.
 DCC_W_CTX=2
-check "a width-2 meter keeps a bar cell at tier 2" "$(segt ctx 2)" "ctx . 47%"
+check "a width-2 meter drops its bar at tier 2" "$(segt ctx 2)" "ctx 47%"
+check "a width-2 meter keeps its bar at tier 0" "$(segt ctx 0)" "ctx #. 47% · 94k"
 DCC_W_CTX=10
 
 # --- monotonic shrink, every shrinking segment --------------------------------
@@ -446,10 +446,14 @@ _dcc_meter() { # _dcc_meter <icon> <label> <pct> <width> <reset-epoch> <tokens|"
   # line, and the percentage beside it says the same thing exactly.
   case "$tier" in
     0) : ;;
-    1) width=$(( (width * 60 + 50) / 100 )); [ "$width" -lt 1 ] && width=1 ;;
-    2) width=$(( (width * 40 + 50) / 100 )); [ "$width" -lt 1 ] && width=1 ;;
+    1) width=$(( (width * 60 + 50) / 100 )) ;;
+    2) width=$(( (width * 40 + 50) / 100 )) ;;
     *) width=0 ;;
   esac
+  # A one-cell bar carries no information: dcc_bar's existing "never look full
+  # below 100%" clamp empties it, so it would read as 0% at every reading under
+  # 100. Below two cells the bar is dropped rather than shown misleadingly.
+  [ "$width" -lt 2 ] && width=0
   dcc_ramp "$pct"
   dcc_bar "$pct" "$width"
   _dcc_icon "$icon" "$DCC_P_MUTE"
@@ -1376,17 +1380,202 @@ git commit -m "feat(statusline): per-line separators and time segment"
 
 # Phase 4 — Configuration surface
 
-### Task 9: `validate.sh` and the budget boundary
+### Task 9: The schema, `validate.sh`, and the budget boundary
+
+The schema is created here rather than in Task 11 because `validate.sh` reads its
+key, segment and theme lists out of it. Keeping a second hardcoded copy of those
+lists in bash would let the two drift silently, and the only symptom would be
+`doctor` accepting a key the schema rejects, or the reverse.
+
+The schema lives under `scripts/` so `dcc_copy_scripts` carries it to
+`~/.claude/dcc-statusline/` along with everything else — `cp -R "$DCC_SRC_DIR/."`
+copies the contents of `scripts/`, so a file at the plugin root would never reach
+an installed copy, and the installed `validate.sh` would find no schema.
 
 **Files:**
+- Create: `plugins/dcc-statusline/scripts/dcc-statusline.schema.json`
 - Create: `plugins/dcc-statusline/scripts/lib/validate.sh`
 - Create: `plugins/dcc-statusline/tests/validate.test.sh`
 
 **Interfaces:**
 - Consumes: `jq` on `PATH`. Forks freely — this file is never on the render path.
-- Produces: `dcc_validate <config-path>` — prints one line per finding to stdout in the `ok   - ` / `warn - ` / `FAIL - ` format `install.sh doctor` already uses. Returns `0` when no `FAIL` line was printed, `1` otherwise. A nonexistent path is `ok` (defaults apply).
+- Produces:
+  - `dcc-statusline.schema.json` — a JSON Schema whose `properties` keys, `properties.lines.items.items.enum` and `properties.theme.enum` are read at runtime by `validate.sh`.
+  - `dcc_validate <config-path>` — prints one line per finding to stdout in the `ok   - ` / `warn - ` / `FAIL - ` format `install.sh doctor` already uses. Returns `0` when no `FAIL` line was printed, `1` otherwise. A nonexistent path is `ok` (defaults apply).
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the schema**
+
+Create `plugins/dcc-statusline/scripts/dcc-statusline.schema.json` with exactly this content:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/darkraise/claude-code-plugins/plugins/dcc-statusline/dcc-statusline.schema.json",
+  "title": "dcc-statusline configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "theme": {
+      "description": "A named preset, merged between the defaults and this file.",
+      "enum": ["default", "minimal", "mono", "vivid"]
+    },
+    "lines": {
+      "description": "Two arrays of segment names, in render order.",
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "array",
+        "items": {
+          "enum": ["dir", "git", "model", "effort", "fast", "agent", "style",
+                   "account", "ctx", "cost", "5h", "7d", "time"]
+        }
+      }
+    },
+    "separator": {
+      "description": "A string used on both lines, or an array of one per line.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" }, "maxItems": 2 }
+      ]
+    },
+    "frame": { "enum": ["auto", "box", "none"] },
+    "frameMargin": {
+      "description": "Cells to hold the box back from the reported terminal width.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "responsive": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxTier": {
+          "description": "0 disables shrinking; 3 allows the most compact rendering.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        }
+      }
+    },
+    "icons": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["auto", "nerd", "unicode"] },
+        "width": { "type": "integer", "minimum": 0, "maximum": 2 }
+      }
+    },
+    "palette": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dir":    { "$ref": "#/$defs/color" },
+        "git":    { "$ref": "#/$defs/color" },
+        "model":  { "$ref": "#/$defs/color" },
+        "effort": { "$ref": "#/$defs/color" },
+        "fast":   { "$ref": "#/$defs/color" },
+        "cost":   { "$ref": "#/$defs/color" },
+        "mute":   { "$ref": "#/$defs/color" },
+        "effortLevels": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "low":    { "$ref": "#/$defs/color" },
+            "medium": { "$ref": "#/$defs/color" },
+            "high":   { "$ref": "#/$defs/color" },
+            "xhigh":  { "$ref": "#/$defs/color" },
+            "max":    { "$ref": "#/$defs/color" }
+          }
+        }
+      }
+    },
+    "meters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ctx": { "type": "integer", "minimum": 0 },
+            "5h":  { "type": "integer", "minimum": 0 },
+            "7d":  { "type": "integer", "minimum": 0 }
+          }
+        },
+        "showEta": { "type": "boolean" },
+        "showTokens": { "type": "boolean" },
+        "ramp": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["at", "color"],
+            "properties": {
+              "at": { "type": "integer", "minimum": 0, "maximum": 100 },
+              "color": { "$ref": "#/$defs/color" },
+              "bold": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "accounts": {
+      "description": "Config directory in ~/... form to its frame colour.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "color": { "$ref": "#/$defs/color" } }
+      }
+    },
+    "glyphs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filled": { "type": "string" },
+        "empty":  { "type": "string" },
+        "dirty":  { "type": "string" }
+      }
+    },
+    "segments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dir":   { "type": "object", "additionalProperties": false,
+                   "properties": { "style": { "enum": ["", "full", "repo", "leaf"] } } },
+        "git":   { "type": "object", "additionalProperties": false,
+                   "properties": { "counters": { "type": "boolean" },
+                                   "maxBranch": { "type": "integer", "minimum": 0 } } },
+        "model": { "type": "object", "additionalProperties": false,
+                   "properties": { "short": { "type": "boolean" } } },
+        "ctx":   { "type": "object", "additionalProperties": false,
+                   "properties": { "label": { "type": "string" } } },
+        "5h":    { "type": "object", "additionalProperties": false,
+                   "properties": { "label": { "type": "string" } } },
+        "7d":    { "type": "object", "additionalProperties": false,
+                   "properties": { "label": { "type": "string" } } }
+      }
+    }
+  },
+  "$defs": {
+    "color": {
+      "description": "A colour name, or a 256-colour index as a string.",
+      "type": "string",
+      "pattern": "^(black|red|green|yellow|blue|magenta|cyan|white|orange|gray|[0-9]{1,3})$"
+    }
+  }
+}
+```
+
+Three parts of it are read at runtime by `validate.sh` and are therefore load-bearing, not merely documentation:
+
+| Schema path | Supplies |
+|-------------|----------|
+| `.properties \| keys` | The 13 valid top-level key names |
+| `.properties.lines.items.items.enum` | The 13 valid segment names |
+| `.properties.theme.enum` | The 4 valid theme names |
+
+- [ ] **Step 2: Write the failing test**
 
 Create `plugins/dcc-statusline/tests/validate.test.sh`:
 
@@ -1433,6 +1622,27 @@ check "an out-of-range maxTier is named" \
 check "the \$schema key is not reported as unknown" \
   "$(vout '{ "$schema": "./dcc-statusline.schema.json" }' | grep -c 'schema')" "0"
 
+# The valid-name lists come from the schema, not from a second copy in bash.
+# These assert the wiring, so a schema edit that widens or narrows a list is
+# picked up by doctor without anyone remembering to update a parallel constant.
+_dcc_v_load_schema
+check "top-level keys are read from the schema" \
+  "$(printf '%s' "$DCC_VALID_TOPKEYS" | wc -w | tr -d ' ')" "13"
+check "segment names are read from the schema" \
+  "$(printf '%s' "$DCC_VALID_SEGMENTS" | wc -w | tr -d ' ')" "13"
+check "theme names are read from the schema" \
+  "$(printf '%s' "$DCC_VALID_THEMES" | wc -w | tr -d ' ')" "4"
+check "the schema list includes the time segment" \
+  "$(printf '%s' "$DCC_VALID_SEGMENTS" | grep -c 'time')" "1"
+
+# An unreadable schema must degrade to a warning, not take doctor down with it.
+DCC_SCHEMA_PATH=/nonexistent/schema.json
+check "a missing schema warns rather than failing" \
+  "$(vout '{ "theme": "mono" }' | grep -c '^warn')" "1"
+check "a missing schema is not a FAIL" \
+  "$(vout '{ "theme": "mono" }' | grep -c '^FAIL')" "0"
+DCC_SCHEMA_PATH="$HERE/../scripts/dcc-statusline.schema.json"
+
 # The budget boundary. validate.sh forks freely; the render path budgets five
 # processes. A source line here would blow that budget on every keystroke, and
 # the cost would not show up in any rendering assertion.
@@ -1444,7 +1654,7 @@ check "no render-path lib sources validate.sh" \
 finish
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [ ] **Step 3: Run it to verify it fails**
 
 ```bash
 bash plugins/dcc-statusline/tests/validate.test.sh
@@ -1452,7 +1662,7 @@ bash plugins/dcc-statusline/tests/validate.test.sh
 
 Expected: FAIL — `validate.sh` does not exist, so the `source` line aborts the file.
 
-- [ ] **Step 3: Write `validate.sh`**
+- [ ] **Step 4: Write `validate.sh`**
 
 Create `plugins/dcc-statusline/scripts/lib/validate.sh`:
 
@@ -1464,10 +1674,37 @@ set -uo pipefail
 # boundary, because a stray source line would cost forks on every keystroke
 # without failing any rendering assertion.
 
-DCC_VALID_SEGMENTS="dir git model effort fast agent style account ctx cost 5h 7d time"
+# The schema is the single source of truth for which keys, segments and themes
+# exist. A second copy of those lists in bash would drift, and the only symptom
+# would be doctor accepting a key the schema rejects, or the reverse.
+#
+# It sits under scripts/ rather than the plugin root because dcc_copy_scripts
+# copies the contents of scripts/ to ~/.claude/dcc-statusline/; a file at the
+# plugin root would never reach an installed copy.
+DCC_SCHEMA_PATH="${BASH_SOURCE[0]%/*}/../dcc-statusline.schema.json"
+
+# Colours are not in the schema as a list -- it constrains them with a regex, so
+# there is nothing to read back. This stays a bash constant by necessity.
 DCC_VALID_COLORS="black red green yellow blue magenta cyan white orange gray"
-DCC_VALID_THEMES="default minimal mono vivid"
-DCC_VALID_TOPKEYS="\$schema lines separator frame frameMargin responsive icons palette meters accounts glyphs segments theme"
+
+DCC_VALID_TOPKEYS=""
+DCC_VALID_SEGMENTS=""
+DCC_VALID_THEMES=""
+
+_dcc_v_load_schema() { # -> DCC_VALID_TOPKEYS, _SEGMENTS, _THEMES; rc 1 if unreadable
+  local out
+  DCC_VALID_TOPKEYS=""; DCC_VALID_SEGMENTS=""; DCC_VALID_THEMES=""
+  [ -r "$DCC_SCHEMA_PATH" ] || return 1
+  out="$(jq -r '
+    (.properties | keys | join(" ")),
+    ((.properties.lines.items.items.enum // []) | join(" ")),
+    ((.properties.theme.enum // []) | join(" "))
+  ' "$DCC_SCHEMA_PATH" 2>/dev/null)" || return 1
+  DCC_VALID_TOPKEYS="$(printf '%s\n' "$out" | sed -n 1p)"
+  DCC_VALID_SEGMENTS="$(printf '%s\n' "$out" | sed -n 2p)"
+  DCC_VALID_THEMES="$(printf '%s\n' "$out" | sed -n 3p)"
+  [ -n "$DCC_VALID_TOPKEYS" ]
+}
 
 _dcc_v_in() { # _dcc_v_in <needle> <space-separated haystack>
   case " $2 " in *" $1 "*) return 0 ;; esac
@@ -1501,24 +1738,31 @@ dcc_validate() { # dcc_validate <config-path> -> findings on stdout, rc 1 on any
     return 1
   fi
 
-  while IFS= read -r k; do
-    [ -n "$k" ] || continue
-    _dcc_v_in "$k" "$DCC_VALID_TOPKEYS" && continue
-    printf 'warn - unknown key "%s" is ignored\n' "$k"
-  done < <(jq -r 'keys[]' "$cfg" 2>/dev/null)
+  # Without a readable schema the name checks are skipped, not guessed. A
+  # warning says so; downgrading to a stale hardcoded list would report
+  # confident nonsense about which keys are valid.
+  if _dcc_v_load_schema; then
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      _dcc_v_in "$k" "$DCC_VALID_TOPKEYS" && continue
+      printf 'warn - unknown key "%s" is ignored\n' "$k"
+    done < <(jq -r 'keys[]' "$cfg" 2>/dev/null)
 
-  v="$(jq -r '.theme // empty' "$cfg" 2>/dev/null)"
-  if [ -n "$v" ] && ! _dcc_v_in "$v" "$DCC_VALID_THEMES"; then
-    printf 'FAIL - theme: "%s" is unknown; valid themes are %s\n' "$v" "$DCC_VALID_THEMES"
-    rc=1
+    v="$(jq -r '.theme // empty' "$cfg" 2>/dev/null)"
+    if [ -n "$v" ] && ! _dcc_v_in "$v" "$DCC_VALID_THEMES"; then
+      printf 'FAIL - theme: "%s" is unknown; valid themes are %s\n' "$v" "$DCC_VALID_THEMES"
+      rc=1
+    fi
+
+    while IFS= read -r v; do
+      [ -n "$v" ] || continue
+      _dcc_v_in "$v" "$DCC_VALID_SEGMENTS" && continue
+      printf 'FAIL - lines: "%s" is not a segment name; valid names are %s\n' "$v" "$DCC_VALID_SEGMENTS"
+      rc=1
+    done < <(jq -r '(.lines // []) | flatten | .[]' "$cfg" 2>/dev/null)
+  else
+    printf 'warn - schema unreadable at %s; key, segment and theme names unchecked\n' "$DCC_SCHEMA_PATH"
   fi
-
-  while IFS= read -r v; do
-    [ -n "$v" ] || continue
-    _dcc_v_in "$v" "$DCC_VALID_SEGMENTS" && continue
-    printf 'FAIL - lines: "%s" is not a segment name; valid names are %s\n' "$v" "$DCC_VALID_SEGMENTS"
-    rc=1
-  done < <(jq -r '(.lines // []) | flatten | .[]' "$cfg" 2>/dev/null)
 
   while IFS= read -r k; do
     [ -n "$k" ] || continue
@@ -1551,7 +1795,7 @@ dcc_validate() { # dcc_validate <config-path> -> findings on stdout, rc 1 on any
 }
 ```
 
-- [ ] **Step 4: Run the test**
+- [ ] **Step 5: Run the test**
 
 ```bash
 bash plugins/dcc-statusline/tests/validate.test.sh
@@ -1560,12 +1804,13 @@ bash plugins/dcc-statusline/tests/run-all.sh
 
 Expected: both `0 failed`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add plugins/dcc-statusline/scripts/lib/validate.sh \
+git add plugins/dcc-statusline/scripts/dcc-statusline.schema.json \
+        plugins/dcc-statusline/scripts/lib/validate.sh \
         plugins/dcc-statusline/tests/validate.test.sh
-git commit -m "feat(statusline): add config validation off render path"
+git commit -m "feat(statusline): add config schema and validation"
 ```
 
 ---
@@ -1764,16 +2009,19 @@ git commit -m "feat(statusline): add multi-width preview"
 
 ---
 
-### Task 11: JSON Schema and `doctor` integration
+### Task 11: Schema seeding and `doctor` integration
+
+The schema file itself was created in Task 9, because `validate.sh` reads its key,
+segment and theme lists at runtime. This task makes `install.sh` point new configs
+at the installed copy and routes `doctor` through `dcc_validate`.
 
 **Files:**
-- Create: `plugins/dcc-statusline/dcc-statusline.schema.json`
 - Modify: `plugins/dcc-statusline/scripts/install.sh:73-85` (`dcc_seed_config`), `:124-132` (`dcc_doctor`)
 - Modify: `plugins/dcc-statusline/tests/install.test.sh` (append)
 
 **Interfaces:**
-- Consumes: `dcc_validate` from Task 9.
-- Produces: a schema file, and a `dcc_seed_config` that writes `"$schema"` into a newly created config.
+- Consumes: `dcc_validate <config-path>` and `plugins/dcc-statusline/scripts/dcc-statusline.schema.json`, both from Task 9.
+- Produces: a `dcc_seed_config` that writes `"$schema"` into a newly created config, and a `dcc_doctor` whose config check is `dcc_validate`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1781,12 +2029,23 @@ Append to `plugins/dcc-statusline/tests/install.test.sh`, immediately before its
 
 ```bash
 # --- schema and validation ----------------------------------------------------
-SCHEMA="$HERE/../dcc-statusline.schema.json"
+# The schema sits under scripts/ so dcc_copy_scripts carries it to an installed
+# copy; a file at the plugin root would never be copied, and the installed
+# validate.sh would find no schema to read its name lists from.
+SCHEMA="$HERE/../scripts/dcc-statusline.schema.json"
 check "the schema file exists" "$([ -f "$SCHEMA" ] && echo yes || echo no)" "yes"
 check "the schema is valid JSON" \
   "$(jq -e . "$SCHEMA" >/dev/null 2>&1 && echo yes || echo no)" "yes"
 check "the schema declares every top-level key" \
   "$(jq -r '.properties | keys | length' "$SCHEMA")" "13"
+
+# An install must carry the schema across, or the installed validate.sh silently
+# stops checking key, segment and theme names.
+cphome="$(mktemp -d)"
+DCC_FAKE_HOME="$cphome" DCC_STATUSLINE_HOME="$cphome/dest" dcc_copy_scripts
+check "install copies the schema to the destination" \
+  "$([ -f "$cphome/dest/dcc-statusline.schema.json" ] && echo yes || echo no)" "yes"
+rm -rf "$cphome"
 
 # A seeded config points at the schema so editors validate while typing.
 seedhome="$(mktemp -d)"
@@ -1817,175 +2076,9 @@ rm -rf "$dochome"
 bash plugins/dcc-statusline/tests/install.test.sh
 ```
 
-Expected: FAIL — the schema file does not exist and `dcc_seed_config` writes no `$schema`.
+Expected: FAIL on the seeding and `doctor` assertions — `dcc_seed_config` writes no `$schema` and `dcc_doctor` does not call `dcc_validate`. The three schema-file assertions already pass, since Task 9 created it.
 
-- [ ] **Step 3: Write the schema**
-
-Create `plugins/dcc-statusline/dcc-statusline.schema.json`:
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/darkraise/claude-code-plugins/plugins/dcc-statusline/dcc-statusline.schema.json",
-  "title": "dcc-statusline configuration",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "$schema": { "type": "string" },
-    "theme": {
-      "description": "A named preset, merged between the defaults and this file.",
-      "enum": ["default", "minimal", "mono", "vivid"]
-    },
-    "lines": {
-      "description": "Two arrays of segment names, in render order.",
-      "type": "array",
-      "maxItems": 2,
-      "items": {
-        "type": "array",
-        "items": {
-          "enum": ["dir", "git", "model", "effort", "fast", "agent", "style",
-                   "account", "ctx", "cost", "5h", "7d", "time"]
-        }
-      }
-    },
-    "separator": {
-      "description": "A string used on both lines, or an array of one per line.",
-      "oneOf": [
-        { "type": "string" },
-        { "type": "array", "items": { "type": "string" }, "maxItems": 2 }
-      ]
-    },
-    "frame": { "enum": ["auto", "box", "none"] },
-    "frameMargin": {
-      "description": "Cells to hold the box back from the reported terminal width.",
-      "type": "integer",
-      "minimum": 0
-    },
-    "responsive": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "maxTier": {
-          "description": "0 disables shrinking; 3 allows the most compact rendering.",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 3
-        }
-      }
-    },
-    "icons": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "mode": { "enum": ["auto", "nerd", "unicode"] },
-        "width": { "type": "integer", "minimum": 0, "maximum": 2 }
-      }
-    },
-    "palette": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "dir":    { "$ref": "#/$defs/color" },
-        "git":    { "$ref": "#/$defs/color" },
-        "model":  { "$ref": "#/$defs/color" },
-        "effort": { "$ref": "#/$defs/color" },
-        "fast":   { "$ref": "#/$defs/color" },
-        "cost":   { "$ref": "#/$defs/color" },
-        "mute":   { "$ref": "#/$defs/color" },
-        "effortLevels": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "low":    { "$ref": "#/$defs/color" },
-            "medium": { "$ref": "#/$defs/color" },
-            "high":   { "$ref": "#/$defs/color" },
-            "xhigh":  { "$ref": "#/$defs/color" },
-            "max":    { "$ref": "#/$defs/color" }
-          }
-        }
-      }
-    },
-    "meters": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "width": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "ctx": { "type": "integer", "minimum": 0 },
-            "5h":  { "type": "integer", "minimum": 0 },
-            "7d":  { "type": "integer", "minimum": 0 }
-          }
-        },
-        "showEta": { "type": "boolean" },
-        "showTokens": { "type": "boolean" },
-        "ramp": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["at", "color"],
-            "properties": {
-              "at": { "type": "integer", "minimum": 0, "maximum": 100 },
-              "color": { "$ref": "#/$defs/color" },
-              "bold": { "type": "boolean" }
-            }
-          }
-        }
-      }
-    },
-    "accounts": {
-      "description": "Config directory in ~/... form to its frame colour.",
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": { "color": { "$ref": "#/$defs/color" } }
-      }
-    },
-    "glyphs": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "filled": { "type": "string" },
-        "empty":  { "type": "string" },
-        "dirty":  { "type": "string" }
-      }
-    },
-    "segments": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "dir":   { "type": "object", "additionalProperties": false,
-                   "properties": { "style": { "enum": ["", "full", "repo", "leaf"] } } },
-        "git":   { "type": "object", "additionalProperties": false,
-                   "properties": { "counters": { "type": "boolean" },
-                                   "maxBranch": { "type": "integer", "minimum": 0 } } },
-        "model": { "type": "object", "additionalProperties": false,
-                   "properties": { "short": { "type": "boolean" } } },
-        "ctx":   { "type": "object", "additionalProperties": false,
-                   "properties": { "label": { "type": "string" } } },
-        "5h":    { "type": "object", "additionalProperties": false,
-                   "properties": { "label": { "type": "string" } } },
-        "7d":    { "type": "object", "additionalProperties": false,
-                   "properties": { "label": { "type": "string" } } }
-      }
-    }
-  },
-  "$defs": {
-    "color": {
-      "description": "A colour name, or a 256-colour index as a string.",
-      "type": "string",
-      "pattern": "^(black|red|green|yellow|blue|magenta|cyan|white|orange|gray|[0-9]{1,3})$"
-    }
-  }
-}
-```
-
-The `properties` object has exactly 13 keys — `$schema`, `theme`, `lines`, `separator`, `frame`, `frameMargin`, `responsive`, `icons`, `palette`, `meters`, `accounts`, `glyphs`, `segments` — matching both the test and `DCC_VALID_TOPKEYS` in `validate.sh`. The two lists must stay in step; the schema is what editors read, `DCC_VALID_TOPKEYS` is what `doctor` reads.
-
-- [ ] **Step 4: Seed `$schema` and wire `doctor`**
+- [ ] **Step 3: Seed `$schema` and wire `doctor`**
 
 In `plugins/dcc-statusline/scripts/install.sh`, add the source line beside the existing two (after `lib/config.sh`):
 
@@ -2014,7 +2107,7 @@ Replace the config check in `dcc_doctor` (the `if [ -f "$cfg" ]` block, lines 12
 
 `dcc_validate` prints its own `ok`/`warn`/`FAIL` lines in the format `doctor` already uses, including the no-config case, so the surrounding branch is no longer needed.
 
-- [ ] **Step 5: Run the tests**
+- [ ] **Step 4: Run the tests**
 
 ```bash
 bash plugins/dcc-statusline/tests/install.test.sh
@@ -2023,13 +2116,12 @@ bash plugins/dcc-statusline/tests/run-all.sh
 
 Expected: both `0 failed`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add plugins/dcc-statusline/dcc-statusline.schema.json \
-        plugins/dcc-statusline/scripts/install.sh \
+git add plugins/dcc-statusline/scripts/install.sh \
         plugins/dcc-statusline/tests/install.test.sh
-git commit -m "feat(statusline): ship config schema, wire doctor"
+git commit -m "feat(statusline): seed schema ref, wire doctor"
 ```
 
 ---
@@ -2202,7 +2294,7 @@ git commit -m "docs(statusline): document tiers, themes and preview"
 
 After Task 12, the following must all hold. Check each before declaring the work done.
 
-- [ ] `bash plugins/dcc-statusline/tests/run-all.sh` reports `0 failed` in all twelve test files.
+- [ ] `bash plugins/dcc-statusline/tests/run-all.sh` reports `0 failed` in all fourteen test files — the ten that existed at baseline plus `tiers`, `theme`, `validate` and `preview`.
 - [ ] `claude plugin validate .` passes from the repo root.
 - [ ] `bash plugins/dcc-statusline/scripts/preview.sh --config /dev/null` renders five closed boxes.
 - [ ] `grep -c 'validate\.sh' plugins/dcc-statusline/scripts/statusline.sh` returns `0`.
