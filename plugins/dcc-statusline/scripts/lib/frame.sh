@@ -34,10 +34,12 @@ dcc_frame_init() { # -> DCC_FRAME_ON, DCC_FRAME_COLS, DCC_WIDTH_COLS
   # 4 rather than 2 -- two for the indent, two so the last cell is never written.
   case "$margin" in ""|*[!0-9]*) margin=4 ;; esac
   [ "$cols" -gt "$margin" ] || return 0
-  # Force base 10: a zero-padded value like "048" passes the digits-only guard
-  # above but is not valid octal, and $(( )) treats a leading zero as an octal
-  # prefix by default -- the arithmetic errors and aborts the whole render.
-  cols=$(( 10#$cols - margin ))
+  # Force base 10 on both operands: a zero-padded value like "048" passes the
+  # digits-only guard above but is not valid octal, and $(( )) treats a
+  # leading zero as an octal prefix by default. Invalid octal errors and
+  # aborts the whole render; valid octal (a margin like "010") is worse --
+  # it silently computes against the wrong number with no error at all.
+  cols=$(( 10#$cols - 10#$margin ))
   # The usable width is known now, whatever is decided about the box below.
   # Fitting a line depends on knowing the width; drawing a frame depends on
   # having room for one. Conflating the two cost every terminal under 52

@@ -171,4 +171,16 @@ DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=4; COLUMNS=048; dcc_frame_init
 check "a zero-padded COLUMNS knows the same width as its unpadded form" \
   "$DCC_WIDTH_COLS" "44"
 
+# DCC_FRAME_MARGIN is user-configurable and goes through the same arithmetic,
+# so it needs the same base-10 guard. "018" is invalid octal and would abort
+# the same way COLUMNS did; "010" is *valid* octal and would silently compute
+# against 8 instead of 10, two cells wrong with no error anywhere -- the one
+# the default-margin frame-width sweep would never catch.
+DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=018; COLUMNS=100; dcc_frame_init
+check "a zero-padded margin knows the same width as its unpadded form" \
+  "$DCC_WIDTH_COLS" "82"
+DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=010; COLUMNS=100; dcc_frame_init
+check "a zero-padded valid-octal margin is still read as decimal" \
+  "$DCC_WIDTH_COLS" "90"
+
 finish
