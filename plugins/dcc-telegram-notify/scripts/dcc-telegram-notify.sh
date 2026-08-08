@@ -27,7 +27,9 @@ TELEGRAM_NOTIFY_HOME="$(notify_home)"
 # The plugin rename moved this home from ~/.telegram-notify. Carry an existing
 # install over so the token, topic map and state survive an update. Within one
 # user home this is a rename(2) and therefore atomic, so the async hooks racing
-# here are safe: one wins, the loser's mv fails against a target that now exists.
+# here are safe: one wins, and rename(2) removes the source directory entry as
+# part of that same atomic step, so the loser's mv fails with ENOENT on the
+# now-vanished source.
 # Every failure is swallowed -- the worst case is a freshly seeded, silent config.
 migrate_home() {
   [ -n "$TELEGRAM_NOTIFY_HOME_WAS_SET" ] && return 0
@@ -725,10 +727,10 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
       ;;
     --events)
       printf 'enabled: %s\n' "$(events_list)"
-      [ -n "$TELEGRAM_EVENTS_UNKNOWN" ] && \
-        printf 'ignored (not valid tokens): %s\n' "$TELEGRAM_EVENTS_UNKNOWN"
+      { [ -n "$TELEGRAM_EVENTS_UNKNOWN" ] && \
+        printf 'ignored (not valid tokens): %s\n' "$TELEGRAM_EVENTS_UNKNOWN"; } || true
       ;;
     "") main ;;
-    *) die "unknown option: $1 (use --discover, --test, --edit, or pipe hook JSON on stdin)" ;;
+    *) die "unknown option: $1 (use --discover, --test, --edit, --events, or pipe hook JSON on stdin)" ;;
   esac
 fi
