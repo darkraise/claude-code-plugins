@@ -91,4 +91,62 @@ for t in 0 1 2 3; do
   prev="$now"
 done
 
+# --- git ----------------------------------------------------------------------
+DCC_GIT_BRANCH="feature/responsive-tiers"
+DCC_GIT_DIRTY=1; DCC_GIT_AHEAD=2; DCC_GIT_BEHIND=0
+DCC_GIT_STAGED=3; DCC_GIT_UNSTAGED=0; DCC_GIT_UNTRACKED=2
+DCC_SEG_GIT_MAXBRANCH=0
+
+check "git tier 0 shows every counter" "$(segt git 0)" \
+  "feature/responsive-tiers* ↑2 ●3 ?2"
+check "git tier 1 shows every counter" "$(segt git 1)" \
+  "feature/responsive-tiers* ↑2 ●3 ?2"
+check "git tier 2 drops the counters" "$(segt git 2)" "feature/responsive-tiers*"
+check "git tier 3 truncates the branch" "$(segt git 3)" "feature/res…*"
+
+DCC_GIT_BRANCH="main"
+check "git tier 3 leaves a short branch alone" "$(segt git 3)" "main*"
+
+# --- model --------------------------------------------------------------------
+P_MODEL="Opus 4.8"
+check "model tier 0 is the full name" "$(segt model 0)" "Opus 4.8"
+check "model tier 2 is the full name" "$(segt model 2)" "Opus 4.8"
+check "model tier 3 is the first word" "$(segt model 3)" "Opus"
+
+# --- meters -------------------------------------------------------------------
+# Width 10 scales to 6 at tier 1 ((10*60+50)/100) and 4 at tier 2.
+P_CTX_PCT=47; P_CTX_TOK=94210
+check "ctx tier 0 is a full bar with the token count" "$(segt ctx 0)" \
+  "ctx #####..... 47% · 94k"
+check "ctx tier 1 narrows the bar, keeping the suffix" "$(segt ctx 1)" \
+  "ctx ###... 47% · 94k"
+check "ctx tier 2 narrows further and drops the suffix" "$(segt ctx 2)" \
+  "ctx ##.. 47%"
+check "ctx tier 3 drops the bar entirely" "$(segt ctx 3)" "ctx 47%"
+
+# A meter configured to width 2 scales below two cells at tier 2. A one-cell bar
+# cannot show both states -- dcc_bar's "never look full below 100%" clamp empties
+# it, so it would read as 0% at 47% -- so the bar is dropped instead of shown
+# misleadingly, and the percentage carries the reading alone.
+DCC_W_CTX=2
+check "a width-2 meter drops its bar at tier 2" "$(segt ctx 2)" "ctx 47%"
+check "a width-2 meter keeps its bar at tier 0" "$(segt ctx 0)" "ctx #. 47% · 94k"
+DCC_W_CTX=10
+
+# --- monotonic shrink, every shrinking segment --------------------------------
+DCC_GIT_BRANCH="feature/responsive-tiers"
+P_5H_PCT=23; P_5H_RESET=1785900000
+P_7D_PCT=41; P_7D_RESET=1786400000
+for nm in git model ctx 5h 7d; do
+  prev=""
+  for t in 0 1 2 3; do
+    now="$(segtcells "$nm" "$t")"
+    if [ -n "$prev" ]; then
+      ok="no"; [ "$now" -le "$prev" ] && ok="yes"
+      check "$nm tier $t is no wider than tier $(( t - 1 ))" "$ok" "yes"
+    fi
+    prev="$now"
+  done
+done
+
 finish

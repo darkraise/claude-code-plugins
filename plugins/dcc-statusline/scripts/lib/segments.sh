@@ -15,19 +15,38 @@ _dcc_icon() { # _dcc_icon <glyph> <color> -- emits the glyph and its trailing sp
   dcc_seg_add " " "$2" "" 1
 }
 
-_dcc_meter() { # _dcc_meter <icon> <label> <pct> <width> <reset-epoch> <tokens|"">
-  local icon="$1" label="$2" pct="$3" width="$4" reset="$5" tokens="$6" suffix=""
+_dcc_meter() { # _dcc_meter <icon> <label> <pct> <width> <reset-epoch> <tokens|""> [tier]
+  local icon="$1" label="$2" pct="$3" width="$4" reset="$5" tokens="$6" tier="${7:-0}"
+  local suffix=""
   [ -n "$pct" ] || return 0
+  # The bar is the first thing to give: it is the least precise reading on the
+  # line, and the percentage beside it says the same thing exactly.
+  case "$tier" in
+    0) : ;;
+    1) width=$(( (width * 60 + 50) / 100 )) ;;
+    2) width=$(( (width * 40 + 50) / 100 )) ;;
+    *) width=0 ;;
+  esac
+  # A one-cell bar carries no information: dcc_bar's existing "never look full
+  # below 100%" clamp empties it, so it would read as 0% at every reading under
+  # 100. Below two cells the bar is dropped rather than shown misleadingly.
+  [ "$width" -lt 2 ] && width=0
   dcc_ramp "$pct"
   dcc_bar "$pct" "$width"
   _dcc_icon "$icon" "$DCC_P_MUTE"
   dcc_seg_add "$label " "$DCC_P_MUTE"
-  dcc_seg_add "$DCC_BAR_ON"  "$DCC_RAMP_COLOR" ""    "$DCC_BAR_ON_N"
-  dcc_seg_add "$DCC_BAR_OFF" "$DCC_P_MUTE"     dim   "$DCC_BAR_OFF_N"
-  dcc_seg_add " " "$DCC_P_MUTE"
+  # With no bar the label's trailing space is the only gap the percentage needs;
+  # emitting the bar's own trailing space as well would double it.
+  if [ -n "$DCC_BAR_ON$DCC_BAR_OFF" ]; then
+    dcc_seg_add "$DCC_BAR_ON"  "$DCC_RAMP_COLOR" ""    "$DCC_BAR_ON_N"
+    dcc_seg_add "$DCC_BAR_OFF" "$DCC_P_MUTE"     dim   "$DCC_BAR_OFF_N"
+    dcc_seg_add " " "$DCC_P_MUTE"
+  fi
   # The percentage is always bold: it is the reading, and the ramp's own bold
   # stop above 90% would otherwise be the only thing that ever emphasised it.
   dcc_seg_add "${pct}%" "$DCC_RAMP_COLOR" bold
+  # The suffix is context, not a reading, so it goes before the bar does.
+  [ "$tier" -ge 2 ] && return 0
   if [ "$DCC_SHOW_TOKENS" -eq 1 ] && [ -n "$tokens" ]; then
     if [ "$tokens" -ge 1000 ] 2>/dev/null; then
       suffix="$(( tokens / 1000 ))k"
@@ -50,7 +69,7 @@ _dcc_meter() { # _dcc_meter <icon> <label> <pct> <width> <reset-epoch> <tokens|"
 
 dcc_segment() { # dcc_segment <name> [tier] -> DCC_SEG_OUT, DCC_SEG_CELLS
   local name="${1:-}" tier="${2:-0}"
-  local cwd root home leaf parent ancestry reponame sub eff
+  local cwd root home leaf parent ancestry reponame sub eff br lim
   case "$name" in
     dir)
       # Claude Code reports the working directory in Windows form while the git
@@ -120,12 +139,21 @@ dcc_segment() { # dcc_segment <name> [tier] -> DCC_SEG_OUT, DCC_SEG_CELLS
     git)
       [ -n "$DCC_GIT_BRANCH" ] || return 0
       _dcc_icon "$DCC_I_GIT" "$DCC_P_GIT"
+      # Tier 3 truncates to the configured limit, or to 12 when none is set --
+      # a branch name is the one payload field with no upper bound, and at the
+      # tier of last resort an unbounded field would crowd out every segment
+      # beside it.
+      br="$DCC_GIT_BRANCH"; lim="${DCC_SEG_GIT_MAXBRANCH:-0}"
+      [ "$tier" -ge 3 ] && [ "$lim" -eq 0 ] 2>/dev/null && lim=12
+      _dcc_trunc "$br" "$lim"; br="$DCC_TRUNC"
       # The dirty marker and the counts render at normal weight, not dim. Dimmed
       # against a dark background a saturated hue turns muddy and the numbers
       # stop being readable, which defeats the point of showing them. The branch
       # name still leads because it is the only bold piece here.
-      dcc_seg_add "$DCC_GIT_BRANCH" "$DCC_P_GIT" bold
+      dcc_seg_add "$br" "$DCC_P_GIT" bold
       [ "$DCC_GIT_DIRTY" -eq 1 ] && dcc_seg_add "$DCC_GLYPH_DIRTY" "$DCC_P_GIT"
+      [ "$tier" -ge 2 ] && return 0
+      [ "${DCC_SEG_GIT_COUNTERS:-1}" -eq 1 ] || return 0
       [ "$DCC_GIT_AHEAD"  -gt 0 ] && dcc_seg_add " $DCC_ARROW_UP$DCC_GIT_AHEAD" "$DCC_P_GIT" "" $(( 2 + ${#DCC_GIT_AHEAD} ))
       [ "$DCC_GIT_BEHIND" -gt 0 ] && dcc_seg_add "$DCC_ARROW_DOWN$DCC_GIT_BEHIND" "$DCC_P_GIT" "" $(( 1 + ${#DCC_GIT_BEHIND} ))
       [ "$DCC_GIT_STAGED"    -gt 0 ] && dcc_seg_add " $DCC_DOT_FILLED$DCC_GIT_STAGED" "$DCC_P_GIT" "" $(( 2 + ${#DCC_GIT_STAGED} ))
@@ -135,7 +163,11 @@ dcc_segment() { # dcc_segment <name> [tier] -> DCC_SEG_OUT, DCC_SEG_CELLS
     model)
       [ -n "$P_MODEL" ] || return 0
       _dcc_icon "$DCC_I_MODEL" "$DCC_P_MODEL"
-      dcc_seg_add "$P_MODEL" "$DCC_P_MODEL" bold
+      if [ "$tier" -ge 3 ] || [ "${DCC_SEG_MODEL_SHORT:-0}" -eq 1 ]; then
+        dcc_seg_add "${P_MODEL%% *}" "$DCC_P_MODEL" bold
+      else
+        dcc_seg_add "$P_MODEL" "$DCC_P_MODEL" bold
+      fi
       ;;
     effort)
       # Coloured by level, on a cool-to-vivid progression that deliberately
@@ -187,9 +219,9 @@ dcc_segment() { # dcc_segment <name> [tier] -> DCC_SEG_OUT, DCC_SEG_CELLS
         dcc_seg_add "\$$money" "$DCC_P_COST" bold
       fi
       ;;
-    ctx) _dcc_meter "$DCC_I_CTX"   "ctx" "$P_CTX_PCT" "$DCC_W_CTX" "" "$P_CTX_TOK" ;;
-    5h)  _dcc_meter "$DCC_I_CLOCK" "5h"  "$P_5H_PCT"  "$DCC_W_5H"  "$P_5H_RESET" "" ;;
-    7d)  _dcc_meter "$DCC_I_CLOCK" "7d"  "$P_7D_PCT"  "$DCC_W_7D"  "$P_7D_RESET" "" ;;
+    ctx) _dcc_meter "$DCC_I_CTX"   "${DCC_L_CTX:-ctx}" "$P_CTX_PCT" "$DCC_W_CTX" "" "$P_CTX_TOK" "$tier" ;;
+    5h)  _dcc_meter "$DCC_I_CLOCK" "${DCC_L_5H:-5h}"   "$P_5H_PCT"  "$DCC_W_5H"  "$P_5H_RESET" "" "$tier" ;;
+    7d)  _dcc_meter "$DCC_I_CLOCK" "${DCC_L_7D:-7d}"   "$P_7D_PCT"  "$DCC_W_7D"  "$P_7D_RESET" "" "$tier" ;;
   esac
   return 0
 }
