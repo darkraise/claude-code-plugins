@@ -193,8 +193,8 @@ check "trunc with maxlen 0 is a no-op" "$DCC_TRUNC" "feature/responsive-tiers"
 _dcc_trunc "main" 10
 check "trunc leaves a short string alone" "$DCC_TRUNC" "main"
 _dcc_trunc "feature/responsive-tiers" 10
-check "trunc cuts and ellipsises" "$DCC_TRUNC" "feature/re…"
-check "trunc keeps maxlen characters plus the ellipsis" "${#DCC_TRUNC}" "11"
+check "trunc cuts and ellipsises" "$DCC_TRUNC" "feature/r…"
+check "trunc never exceeds maxlen" "${#DCC_TRUNC}" "10"
 
 # --- dir ----------------------------------------------------------------------
 HOME="/home/u"
@@ -266,11 +266,15 @@ _dcc_trunc() { # _dcc_trunc <text> <maxlen> -> DCC_TRUNC
   case "$n" in ''|*[!0-9]*) return 0 ;; esac
   [ "$n" -gt 0 ] || return 0
   [ "${#s}" -gt "$n" ] || return 0
-  DCC_TRUNC="${s:0:$n}$DCC_ELLIPSIS"
+  # maxlen-1 characters, so the ellipsis brings the total back to exactly
+  # maxlen. Callers budget width against this bound -- segments.git.maxBranch
+  # means "at most this many cells" -- so a result one cell over would make
+  # every such budget wrong by one.
+  DCC_TRUNC="${s:0:$(( n - 1 ))}$DCC_ELLIPSIS"
 }
 ```
 
-Note the result is `n+1` characters and `n+1` cells — the ellipsis is one cell under `LC_ALL=C.UTF-8`, so `dcc_seg_add`'s default `${#text}` count is correct and no explicit cell count is needed.
+The result is exactly `n` characters and `n` cells: the ellipsis is one cell under `LC_ALL=C.UTF-8`, so `dcc_seg_add`'s default `${#text}` count is correct and no explicit cell count is needed. At `n` of 1 the slice is empty and the result is the ellipsis alone, which still honours the bound.
 
 - [ ] **Step 4: Add the tier parameter and the `dir` tiers to `segments.sh`**
 
@@ -372,7 +376,7 @@ check "git tier 0 shows every counter" "$(segt git 0)" \
 check "git tier 1 shows every counter" "$(segt git 1)" \
   "feature/responsive-tiers* ↑2 ●3 ?2"
 check "git tier 2 drops the counters" "$(segt git 2)" "feature/responsive-tiers*"
-check "git tier 3 truncates the branch" "$(segt git 3)" "feature/resp…*"
+check "git tier 3 truncates the branch" "$(segt git 3)" "feature/res…*"
 
 DCC_GIT_BRANCH="main"
 check "git tier 3 leaves a short branch alone" "$(segt git 3)" "main*"
@@ -1114,7 +1118,7 @@ check "counters off hides the counts" "$(segt git 0)" "feature/responsive-tiers*
 DCC_SEG_GIT_COUNTERS=1
 
 DCC_SEG_GIT_MAXBRANCH=8
-check "maxBranch truncates at tier 0" "$(segt git 0)" "feature/…* ↑2 ●3 ?2"
+check "maxBranch truncates at tier 0" "$(segt git 0)" "feature…* ↑2 ●3 ?2"
 DCC_SEG_GIT_MAXBRANCH=0
 
 DCC_SEG_MODEL_SHORT=1
