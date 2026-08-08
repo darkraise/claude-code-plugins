@@ -2570,5 +2570,12 @@ After Task 12, the following must all hold. Check each before declaring the work
 - [ ] `claude plugin validate .` passes from the repo root.
 - [ ] `bash plugins/dcc-statusline/scripts/preview.sh --config /dev/null` renders five closed boxes.
 - [ ] `grep -c 'validate\.sh' plugins/dcc-statusline/scripts/statusline.sh` returns `0`.
-- [ ] `grep -c '\$(' plugins/dcc-statusline/scripts/statusline.sh plugins/dcc-statusline/scripts/lib/*.sh` returns `0` for every file except `validate.sh`, `config.sh` (whose `dcc_parse_all` has always used `$(jq ...)`), and `install.sh`.
+- [ ] No unbudgeted command substitution on the render path. `$((` arithmetic is not a fork and does not count, so grep for `$(` excluding it:
+
+  ```bash
+  grep -n '\$(' plugins/dcc-statusline/scripts/statusline.sh \
+                plugins/dcc-statusline/scripts/lib/*.sh | grep -v '\$(('
+  ```
+
+  The only hits may be the five processes the budget already allows: four in `config.sh` (`dcc_parse_all`'s `$(jq ...)` and its three fallbacks, of which exactly one runs per render) and two in `git.sh` (`$($to git ...)` for `status` and `rev-parse`). `validate.sh` and `preview.sh` are off the render path and exempt. A hit anywhere else — `segments.sh`, `render.sh`, `frame.sh`, `statusline.sh` — is a budget violation.
 - [ ] A real session shows the status line unchanged at your normal terminal width — tier 0 is the default and nothing should look different until the terminal is narrowed.
