@@ -500,6 +500,7 @@ main() {
   project=$(basename "${cwd:-$PWD}")
 
   dbg "── EVENT=$event session=${session:0:8} pid=$$"
+  dbg "   events=[$(events_list)]${TELEGRAM_EVENTS_UNKNOWN:+ unknown=[$TELEGRAM_EVENTS_UNKNOWN]}"
 
   # Route to a per-project topic when enabled and the cwd is a git repo; a
   # non-repo, a create failure, or a deleted topic all fall back to the shared
@@ -531,7 +532,7 @@ main() {
       ;;
 
     Notification)
-      local ntype transcript status body action tool sidechain q opts n target
+      local ntype transcript status body action tool sidechain q opts n target gate
       ntype=$(jq -r '.notification_type // ""' <<<"$payload" 2>/dev/null)
       transcript=$(jq -r '.transcript_path // ""' <<<"$payload" 2>/dev/null)
       if [ "$ntype" = "permission_prompt" ]; then
@@ -540,40 +541,51 @@ main() {
         sidechain=$(jq -r '.sidechain // false' <<<"$action" 2>/dev/null)
         if [ "$tool" = "AskUserQuestion" ]; then
           # A question is waiting, not a tool to approve — present it as one.
-          status="❓ Needs your input"
+          status="❓ Needs your input"; gate=input
           q=$(jq -r '.question // ""' <<<"$action" 2>/dev/null)
           opts=$(jq -r '(.options // []) | join(" / ")' <<<"$action" 2>/dev/null)
           body="$q"
           [ -n "$opts" ] && body="$q"$'\n\n'"Options: $opts"
         elif [ -n "$tool" ]; then
-          status="🔐 Needs permission"
+          status="🔐 Needs permission"; gate=permission
           n=$(jq -r '.n // 1' <<<"$action" 2>/dev/null)
           target=$(jq -r '.target // ""' <<<"$action" 2>/dev/null)
           body="▸ $tool"
           [ -n "$target" ] && body="▸ $tool: $target"
           [ "${n:-1}" -gt 1 ] 2>/dev/null && body="$body (+$((n - 1)) more)"
         else
-          status="🔐 Needs permission"
+          status="🔐 Needs permission"; gate=permission
           body=$(jq -r '.message // "Claude is waiting for your approval."' <<<"$payload" 2>/dev/null)
         fi
         # Mark subagent-issued prompts so they are distinct from the main session.
         [ "$sidechain" = "true" ] && header="$header ⤷ <i>subagent</i>"
       else
-        status="🔔 Needs you"
+        status="🔔 Needs you"; gate=input
         body=$(jq -r '.message // "Claude is waiting for you."' <<<"$payload" 2>/dev/null)
       fi
+      event_enabled "$gate" || { dbg "   muted: $gate not in TELEGRAM_EVENTS [$(events_list)]"; exit 0; }
       send_message "$header" "$status" "$body"
       ;;
 
     Stop)
-      local transcript full kind status body duration="" turn_start="" now
-      transcript=$(jq -r '.transcript_path // ""' <<<"$payload" 2>/dev/null)
-
+      local transcript full kind status body duration="" turn_start="" now gate
+      # Consume the turn timer before any early exit, or muted sessions leave
+      # start files behind forever.
       if [ -r "$start_file" ]; then
         turn_start=$(cat "$start_file")
         [[ "$turn_start" =~ ^[0-9]+$ ]] || turn_start=""
         rm -f "$start_file"
       fi
+
+      # With every turn-end token off there is nothing this branch can produce,
+      # so skip before the transcript read and the LLM classify call.
+      if ! event_enabled stop-question && ! event_enabled stop-done \
+         && ! event_enabled stop-reply; then
+        dbg "   muted: no stop-* token in TELEGRAM_EVENTS [$(events_list)]"
+        exit 0
+      fi
+
+      transcript=$(jq -r '.transcript_path // ""' <<<"$payload" 2>/dev/null)
 
       # Primary source: the last_assistant_message field Claude Code puts in the
       # Stop payload. It is the authoritative in-memory final message, immune to
@@ -613,10 +625,11 @@ main() {
       fi
 
       case "$kind" in
-        question) status="❓ Waiting on you" ;;
-        reply)    status="💬 Replied" ;;
-        *)        status="✅ Done" ;;
+        question) status="❓ Waiting on you"; gate=stop-question ;;
+        reply)    status="💬 Replied";        gate=stop-reply ;;
+        *)        status="✅ Done";           gate=stop-done ;;
       esac
+      event_enabled "$gate" || { dbg "   muted: $gate not in TELEGRAM_EVENTS [$(events_list)]"; exit 0; }
 
       if [ -n "$turn_start" ]; then
         now=$(date +%s)
