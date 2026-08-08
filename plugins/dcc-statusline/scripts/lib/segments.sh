@@ -69,7 +69,7 @@ _dcc_meter() { # _dcc_meter <icon> <label> <pct> <width> <reset-epoch> <tokens|"
 
 dcc_segment() { # dcc_segment <name> [tier] -> DCC_SEG_OUT, DCC_SEG_CELLS
   local name="${1:-}" tier="${2:-0}"
-  local cwd root home leaf parent ancestry reponame sub eff br lim
+  local cwd root home leaf parent ancestry reponame sub eff br lim tnow
   case "$name" in
     dir)
       # Claude Code reports the working directory in Windows form while the git
@@ -201,6 +201,13 @@ dcc_segment() { # dcc_segment <name> [tier] -> DCC_SEG_OUT, DCC_SEG_CELLS
       else
         dcc_seg_add "fast" "$DCC_P_FAST"
       fi
+      ;;
+    time)
+      # %(...)T is a bash builtin, so this costs no fork -- the same mechanism
+      # statusline.sh uses for DCC_NOW. Reading DCC_NOW rather than -1 keeps a
+      # frozen test clock deterministic.
+      printf -v tnow '%(%H:%M)T' "${DCC_NOW:--1}"
+      dcc_seg_add "$tnow" "$DCC_P_MUTE"
       ;;
     agent)   dcc_seg_add "$P_AGENT" "$DCC_P_MUTE" ;;
     style)   dcc_seg_add "$P_STYLE" "$DCC_P_MUTE" ;;

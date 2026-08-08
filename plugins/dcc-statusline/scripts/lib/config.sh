@@ -35,7 +35,9 @@ P_7D_RESET=""
 # construction: no segment loop runs, so no segment's behavior matters.
 DCC_LINE1=""
 DCC_LINE2=""
-printf -v DCC_SEP '  \302\267  '   # U+00B7 middle dot
+printf -v DCC_SEP  '  \302\267  '   # U+00B7 middle dot
+printf -v DCC_SEP1 '  \302\267  '
+printf -v DCC_SEP2 '  \302\267  '
 DCC_FRAME_MODE="auto"
 DCC_FRAME_MARGIN=4
 DCC_MAX_TIER=3

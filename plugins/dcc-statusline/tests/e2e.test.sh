@@ -254,5 +254,27 @@ check "maxTier 0 never elides a path or truncates a branch" \
   "$(printf '%s' "$pinned" | grep -c '…')" "0"
 rm -f "$cfgt"
 
+# --- per-line separators ------------------------------------------------------
+cfgs="$(mktemp)"
+printf '{ "separator": [" | ", " / "], "frame": "none" }' > "$cfgs"
+out="$(DCC_STATUSLINE_CONFIG="$cfgs" bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+check "line one uses the first separator" \
+  "$(printf '%s\n' "$out" | sed -n 1p | grep -c ' | ')" "1"
+check "line two uses the second separator" \
+  "$(printf '%s\n' "$out" | sed -n 2p | grep -c ' / ')" "1"
+
+# A one-element array applies to both lines.
+printf '{ "separator": [" | "], "frame": "none" }' > "$cfgs"
+out="$(DCC_STATUSLINE_CONFIG="$cfgs" bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+check "a short array reuses its last element" \
+  "$(printf '%s\n' "$out" | sed -n 2p | grep -c ' | ')" "1"
+
+# An empty array is not a separator; the default stands.
+printf '{ "separator": [], "frame": "none" }' > "$cfgs"
+out="$(DCC_STATUSLINE_CONFIG="$cfgs" bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+check "an empty array falls back to the default" \
+  "$(printf '%s\n' "$out" | sed -n 1p | grep -c '  ·  ')" "1"
+rm -f "$cfgs"
+
 rm -rf "$fakehome"
 finish

@@ -55,7 +55,6 @@ dcc_main() {
   dcc_icons_init
   dcc_frame_init
   dcc_frame_budget
-  dcc_sep_cells "${#DCC_SEP}"
 
   # Tests freeze the clock; %(%s)T is a bash builtin, so this costs no fork.
   [ -n "${DCC_NOW:-}" ] || printf -v DCC_NOW '%(%s)T' -1
@@ -86,9 +85,11 @@ dcc_main() {
   if [ "$DCC_FRAME_ON" -eq 1 ]; then
     dcc_frame_top "$P_EMAIL" "$DCC_I_ACCOUNT" "$DCC_ICON_W"
     printf '%s\n' "$DCC_FRAME_OUT"
+    DCC_SEP="$DCC_SEP1"; dcc_sep_cells "${#DCC_SEP1}"
     dcc_line_fit "$names1" "$DCC_FRAME_BUDGET" 1
     dcc_frame_row "$DCC_LINE_OUT" "$DCC_LINE_CELLS"
     printf '%s\n' "$DCC_FRAME_OUT"
+    DCC_SEP="$DCC_SEP2"; dcc_sep_cells "${#DCC_SEP2}"
     dcc_line_fit "$names2" "$DCC_FRAME_BUDGET" 0
     dcc_frame_row "$DCC_LINE_OUT" "$DCC_LINE_CELLS"
     printf '%s\n' "$DCC_FRAME_OUT"
@@ -97,9 +98,11 @@ dcc_main() {
     return 0
   fi
 
+  DCC_SEP="$DCC_SEP1"; dcc_sep_cells "${#DCC_SEP1}"
   dcc_line_fit "$names1" 0 1
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 
+  DCC_SEP="$DCC_SEP2"; dcc_sep_cells "${#DCC_SEP2}"
   dcc_line_fit "$names2" 0 0
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 

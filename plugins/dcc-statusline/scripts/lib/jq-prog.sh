@@ -122,7 +122,12 @@ DCC_JQ_PROG='
   def str($v): if ($v|type) == "string" then $v else "" end;
   @sh "DCC_LINE1=\($c.lines[0] // [] | join(" "))",
   @sh "DCC_LINE2=\($c.lines[1] // [] | join(" "))",
-  @sh "DCC_SEP=\($c.separator)",
+  @sh "DCC_SEP1=\(if ($c.separator|type) == "array"
+                  then ($c.separator[0] // "  \u00b7  ")
+                  else $c.separator end)",
+  @sh "DCC_SEP2=\(if ($c.separator|type) == "array"
+                  then ($c.separator[1] // $c.separator[0] // "  \u00b7  ")
+                  else $c.separator end)",
   @sh "DCC_FRAME_MODE=\($c.frame // "auto")",
   @sh "DCC_FRAME_MARGIN=\(num($c.frameMargin; 4))",
   @sh "DCC_MAX_TIER=\(num($c.responsive.maxTier; 3))",

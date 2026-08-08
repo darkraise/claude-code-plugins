@@ -177,7 +177,7 @@ check "an unknown segment name is ignored" "$(seg nosuchsegment)" ""
 # between that failure and an "unbound variable" abort of the whole status
 # line. Each name runs in its own subshell so a real regression fails that
 # one assertion instead of taking this whole file down with it.
-for name in dir git model effort fast think agent style account ctx cost 5h 7d; do
+for name in dir git model effort fast time agent style account ctx cost 5h 7d; do
   result=$(
     {
       unset P_EMAIL P_CWD P_MODEL P_EFFORT P_FAST P_THINK P_AGENT P_STYLE \

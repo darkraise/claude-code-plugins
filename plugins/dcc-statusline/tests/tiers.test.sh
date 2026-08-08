@@ -264,4 +264,13 @@ DCC_SEG_DIR_STYLE=""
 check "no dir.style restores tier 0" "$(segt dir 0)" \
   "~/Repos/Personal/claude-code-plugins/plugins/dcc-statusline"
 
+# --- the time segment ---------------------------------------------------------
+# DCC_NOW is the frozen clock the meters already use, so the rendering is
+# deterministic. 1785886800 mod 86400 is 85200 seconds, which is 23:40 UTC --
+# TZ is pinned because %(%H:%M)T renders in local time.
+DCC_NOW=1785886800
+export TZ=UTC
+check "time renders hours and minutes" "$(segt time 0)" "23:40"
+check "time does not shrink" "$(segt time 3)" "23:40"
+
 finish
