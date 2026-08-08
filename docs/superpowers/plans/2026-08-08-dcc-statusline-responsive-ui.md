@@ -17,7 +17,7 @@
 - **`LC_ALL=C.UTF-8`** is set by `statusline.sh`; without it bash measures bytes, not characters. Tests that measure cells must export it themselves.
 - **All glyphs in `scripts/` are written as octal UTF-8 escapes** (`printf -v v '\342\200\246'`) so source files stay pure ASCII.
 - **Any text whose character count differs from its terminal cell count must pass an explicit cell count to `dcc_seg_add`.** ASCII and single-cell Unicode may omit it.
-- **Tier 0 output must remain byte-for-byte identical to today's** for every existing fixture.
+- **Tier 0 output must remain byte-for-byte identical to today's** for every existing fixture. One ruled exception: a meter configured to a width below 2 renders with no bar at every tier, including tier 0. Previously width 1 produced a single empty cell that reads as 0% at any reading under 100%, and width 0 produced a doubled space. Both are misleading rather than merely different, and the `minimal` theme sets width 0 deliberately. Default widths (10/8/8) are unaffected, so no existing fixture changes.
 - **Plugin name prefix `dcc-`** must agree across `plugins/dcc-statusline/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and the directory name.
 - **Run `claude plugin validate .` from the repo root before committing any manifest change.**
 - **Commit format:** `<type>(<scope>): <subject>`, subject ≤50 chars, imperative, no period.
