@@ -64,5 +64,34 @@ resolve "none"
 check "event_enabled false for everything under none" \
   "$(event_enabled permission && echo yes || echo no)" "no"
 
+# --- --events CLI dispatch -----------------------------------------------
+# Exercises the actual subprocess arm, not the sourced parser: the exit-code
+# bug this covers only showed up through the dispatch arm's own exit status,
+# which the checks above (calling functions in-process) can never observe.
+# Each run gets its own home/env so it cannot touch the real config.
+run_events() {
+  local home env
+  home="$(mktemp -d)"
+  env="$(mktemp -u)"
+  if [ "$1" = "UNSET" ]; then
+    TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" \
+      env -u TELEGRAM_EVENTS bash "$SCRIPT" --events
+  else
+    TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" \
+      TELEGRAM_EVENTS="$1" bash "$SCRIPT" --events
+  fi
+}
+
+out="$(run_events UNSET)"; status=$?
+check "--events exits 0 on a clean default config" "$status" "0"
+check "--events prints the default enabled set" "$out" \
+  "enabled: input permission stop-question"
+
+out="$(run_events "all,bogus")"; status=$?
+check "--events exits 0 even with unknown tokens" "$status" "0"
+check "--events prints the full set and the ignored-tokens line" "$out" \
+"enabled: input permission stop-done stop-question stop-reply
+ignored (not valid tokens): bogus"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

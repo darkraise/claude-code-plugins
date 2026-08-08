@@ -13,8 +13,27 @@ BIN="$TMP/bin"; mkdir -p "$BIN"
 export CURL_CALLS="$TMP/curl.calls"
 cat > "$BIN/curl" <<'STUB'
 #!/usr/bin/env bash
-# Stand-in for curl: record the send and answer like the Telegram Bot API.
-echo call >> "$CURL_CALLS"
+# Stand-in for both endpoints the script calls curl against: the Telegram Bot
+# API send and, for the stop-reply tests below, the OpenAI-compatible classify
+# call. Only a real send is counted, matched by a /sendMessage substring in
+# argv so the classify call (a different endpoint, never counted) can share
+# this one stub. $LLM_STUB_KIND picks the classify response's "kind".
+for a in "$@"; do
+  case "$a" in
+    */sendMessage*)
+      echo call >> "$CURL_CALLS"
+      cat >/dev/null
+      printf '{"ok":true,"result":{"message_id":1}}'
+      exit 0
+      ;;
+    */chat/completions*)
+      cat >/dev/null
+      inner=$(jq -n --arg k "${LLM_STUB_KIND:-work}" '{kind:$k, summary:"stub summary"}')
+      jq -n --arg c "$inner" '{choices:[{message:{content:$c}}]}'
+      exit 0
+      ;;
+  esac
+done
 cat >/dev/null
 printf '{"ok":true,"result":{"message_id":1}}'
 STUB
@@ -85,6 +104,33 @@ date +%s > "$TELEGRAM_NOTIFY_HOME/state/s1.start"
 sends none "$STOP_W" >/dev/null
 check "a muted Stop still clears its start file" \
   "$([ -e "$TELEGRAM_NOTIFY_HOME/state/s1.start" ] && echo yes || echo no)" "no"
+
+# stop-reply gating: the local heuristic classifier only ever produces
+# "question" or "work", so it can never reach the stop-reply gate -- that only
+# happens via the LLM classify call. Point TELEGRAM_LLM_URL at a dummy gateway
+# through a dedicated config file, so every test above keeps using $CFG's
+# empty TELEGRAM_LLM_URL and never pays for a classify call it doesn't need.
+CFG_LLM="$TMP/telegram-llm.env"
+cat > "$CFG_LLM" <<'EOF'
+TELEGRAM_BOT_TOKEN=123456789:TESTTOKEN
+TELEGRAM_CHAT_ID=-1001234567890
+TELEGRAM_LLM_URL=http://llm.invalid
+TELEGRAM_TOPIC_MODE=shared
+EOF
+
+# sends_llm <stub-kind> <events-value> <payload-json>
+sends_llm() {
+  : > "$CURL_CALLS"
+  printf '%s' "$3" \
+    | LLM_STUB_KIND="$1" TELEGRAM_NOTIFY_ENV="$CFG_LLM" TELEGRAM_EVENTS="$2" \
+      bash "$SCRIPT" >/dev/null 2>&1
+  grep -c call "$CURL_CALLS" 2>/dev/null || true
+}
+
+check "stop-reply sends when the LLM classifies a reply" \
+  "$(sends_llm reply stop-reply "$STOP_W")"    "1"
+check "stop-question mutes when the LLM classifies a reply" \
+  "$(sends_llm reply stop-question "$STOP_W")" "0"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
