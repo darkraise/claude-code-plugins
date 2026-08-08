@@ -31,6 +31,13 @@ _dcc_v_load_schema() { # -> DCC_VALID_TOPKEYS, _SEGMENTS, _THEMES; rc 1 if unrea
     ((.properties.lines.items.items.enum // []) | join(" ")),
     ((.properties.theme.enum // []) | join(" "))
   ' "$DCC_SCHEMA_PATH" 2>/dev/null)" || return 1
+  # Native Windows jq emits CRLF. Command substitution strips the trailing
+  # newlines but not the CR ahead of each one, so without this every list ends
+  # in a stray CR and _dcc_v_in stops matching its LAST entry -- doctor would
+  # then call the `theme` key unknown and reject a valid `time` segment or
+  # `vivid` theme. Stripping here rather than relying on sed to normalise:
+  # MSYS2's sed happens to, but that is not a property to depend on.
+  out="${out//$'\r'/}"
   DCC_VALID_TOPKEYS="$(printf '%s\n' "$out" | sed -n 1p)"
   DCC_VALID_SEGMENTS="$(printf '%s\n' "$out" | sed -n 2p)"
   DCC_VALID_THEMES="$(printf '%s\n' "$out" | sed -n 3p)"
