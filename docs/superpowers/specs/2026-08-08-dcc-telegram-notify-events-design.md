@@ -119,6 +119,9 @@ This is a deliberate behavior change for existing users: `✅ Done` and
 `stop-done` / `stop-reply` or `all`. The README documents it under a short
 upgrade note.
 
+Refinement: a set-but-empty `TELEGRAM_EVENTS=` resolves to no events (same as
+`none`) — only a variable that is entirely unset receives this default.
+
 ### Parsing
 
 One function, `event_enabled <token>`, returning 0 or 1. It normalizes

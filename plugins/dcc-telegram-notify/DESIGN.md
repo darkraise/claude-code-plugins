@@ -12,7 +12,7 @@ plugin that works on Windows, Linux, and macOS and supports multiple Claude acco
 | Question | Decision |
 |----------|----------|
 | Distribution | Single git repo that is both marketplace and plugin (`source: "./"`), like the caveman plugin. Install with `/plugin marketplace add` + `/plugin install`. |
-| Config & state location | `~/.telegram-notify/` — one per-user home shared by all accounts, outside the plugin dir so it survives updates. Overridable via `TELEGRAM_NOTIFY_HOME`. |
+| Config & state location | `~/.dcc-telegram-notify/` — one per-user home shared by all accounts, outside the plugin dir so it survives updates. Overridable via `TELEGRAM_NOTIFY_HOME`. |
 | LLM summaries | Off by default (`TELEGRAM_LLM_URL` empty). Opt in per machine. Avoids a dead-gateway timeout every turn on hosts that can't reach a given LLM endpoint. |
 | Multi-account labels | Auto-derived from `CLAUDE_CONFIG_DIR`; default account shows no label, `~/.claude-alt` shows `alt`. Customizable via `TELEGRAM_ACCOUNT_LABELS` map. |
 
@@ -25,7 +25,7 @@ plugin that works on Windows, Linux, and macOS and supports multiple Claude acco
   official security-guidance plugin.
 - **`scripts/dcc-telegram-notify.sh`** is the engine. It reads the hook JSON on stdin and
   dispatches on `hook_event_name`; `--test` and `--discover` are maintenance modes.
-  Config/state paths anchor to `~/.telegram-notify/`. First run seeds a commented
+  Config/state paths anchor to `~/.dcc-telegram-notify/`. First run seeds a commented
   `telegram.env` with an **empty** token so hooks stay silent until configured.
 - **`commands/dcc-telegram-notify.md`** is a `/dcc-telegram-notify setup|test|discover|status`
   slash command for configuration UX.
@@ -54,7 +54,7 @@ fix all carry over unchanged.
 The earlier hand-wired setup put hooks directly in each account's `settings.json` and kept
 `telegram-notify.sh` + `telegram.env` under `~/.claude`. When adopting the plugin:
 
-1. Copy the token into `~/.telegram-notify/telegram.env`.
+1. Copy the token into `~/.dcc-telegram-notify/telegram.env`.
 2. After installing the plugin in an account, remove that account's hand-wired Telegram
    hooks from `settings.json` (else it double-notifies).
 3. Delete the old `~/.claude/telegram-notify.sh` and `~/.claude/telegram.env`.

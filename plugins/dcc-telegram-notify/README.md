@@ -121,6 +121,9 @@ Three aliases expand for you: `stop` is all three `stop-*` tokens, `all` is
 everything, and `none` silences the plugin without deleting your bot token.
 Unknown tokens are ignored rather than treated as errors, so a typo can't take
 your notifications down — `/dcc-telegram-notify status` reports any it dropped.
+Setting `TELEGRAM_EVENTS=` to an empty string silences everything too, the same
+as `none` — the default above only applies when the variable is left entirely
+unset or commented out.
 
 `UserPromptSubmit` is not in the list. It sends nothing; it only starts the
 timer that gives turn-end messages their duration.
@@ -129,7 +132,11 @@ timer that gives turn-end messages their duration.
 > state move from `~/.telegram-notify` to `~/.dcc-telegram-notify` automatically
 > on the first hook firing — nothing to do. And `✅ Done` / `💬 Replied` turn-end
 > messages stop arriving, because the new default omits them. Set
-> `TELEGRAM_EVENTS=all` to get the old behavior back.
+> `TELEGRAM_EVENTS=all` to get the old behavior back. If notifications go quiet
+> after updating, the automatic move can fail silently (a file lock, antivirus,
+> or a synced home directory) — check by copying `telegram.env` (and
+> `topics.json`, if present) from `~/.telegram-notify/` to
+> `~/.dcc-telegram-notify/` yourself.
 
 ## Optional LLM turn summaries
 
