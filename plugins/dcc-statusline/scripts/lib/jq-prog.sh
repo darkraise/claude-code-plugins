@@ -16,6 +16,7 @@ DCC_DEFAULT_CONFIG='{
   "separator": "  \u00b7  ",
   "frame": "auto",
   "frameMargin": 4,
+  "responsive": { "maxTier": 3 },
   "icons": { "mode": "auto", "width": 0 },
   "palette": {
     "dir": "blue", "git": "magenta", "model": "cyan",
@@ -61,6 +62,7 @@ DCC_JQ_PROG='
   @sh "DCC_SEP=\($c.separator)",
   @sh "DCC_FRAME_MODE=\($c.frame // "auto")",
   @sh "DCC_FRAME_MARGIN=\(num($c.frameMargin; 4))",
+  @sh "DCC_MAX_TIER=\(num($c.responsive.maxTier; 3))",
   @sh "DCC_ICON_MODE_CFG=\($c.icons.mode // "auto")",
   @sh "DCC_ICON_W_CFG=\(num($c.icons.width; 0))",
   @sh "DCC_P_DIR=\($c.palette.dir // "blue")",

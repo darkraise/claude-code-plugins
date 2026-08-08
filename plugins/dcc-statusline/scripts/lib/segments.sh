@@ -225,3 +225,47 @@ dcc_segment() { # dcc_segment <name> [tier] -> DCC_SEG_OUT, DCC_SEG_CELLS
   esac
   return 0
 }
+
+DCC_LINE_TIER=0
+
+_dcc_render_line() { # _dcc_render_line <names> <tier> <mark-bad-config>
+  local name
+  dcc_line_reset
+  for name in $1; do
+    dcc_segment "$name" "$2"
+    dcc_line_push
+  done
+  if [ "${3:-0}" -eq 1 ] && [ "${DCC_CONFIG_BAD:-0}" -eq 1 ]; then
+    dcc_seg_add "cfg?" red bold
+    dcc_line_push
+  fi
+}
+
+dcc_line_fit() { # dcc_line_fit <names> <max-cells> <mark-bad-config>
+  # Renders at tier 0 and escalates the whole line one tier at a time until it
+  # fits. Uniform escalation is deliberate: a line where the path abbreviated
+  # but the branch did not would follow no rule a reader could infer.
+  #
+  # A max of 0 means the width is unknown -- COLUMNS was missing or unusable,
+  # which is also why the frame is off -- so there is nothing to fit against and
+  # tier 0 stands.
+  local names="$1" max="${2:-0}" mark="${3:-0}" tier top="${DCC_MAX_TIER:-3}"
+  case "$top" in ''|*[!0-9]*) top=3 ;; esac
+  [ "$top" -gt 3 ] && top=3
+  for (( tier = 0; tier <= top; tier++ )); do
+    _dcc_render_line "$names" "$tier" "$mark"
+    DCC_LINE_TIER="$tier"
+    if [ "$max" -le 0 ]; then
+      dcc_line_build
+      return 0
+    fi
+    dcc_line_measure
+    if [ "$DCC_LINE_TOTAL" -le "$max" ]; then
+      dcc_line_build "$max"
+      return 0
+    fi
+  done
+  # Tier `top` still overflows. Greedy segment dropping is the last resort, and
+  # the only path on which data is actually lost.
+  dcc_line_build "$max"
+}

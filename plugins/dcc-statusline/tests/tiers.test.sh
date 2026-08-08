@@ -164,4 +164,58 @@ for nm in git model ctx 5h 7d; do
   done
 done
 
+# --- escalation ---------------------------------------------------------------
+DCC_SEP="  ·  "; dcc_sep_cells 5
+DCC_MAX_TIER=3
+DCC_CONFIG_BAD=0
+DCC_GIT_BRANCH="main"; DCC_GIT_DIRTY=0
+DCC_GIT_AHEAD=0; DCC_GIT_BEHIND=0
+DCC_GIT_STAGED=0; DCC_GIT_UNSTAGED=0; DCC_GIT_UNTRACKED=0
+DCC_GIT_ROOT="/home/u/Repos/Personal/claude-code-plugins"
+P_CWD="/home/u/Repos/Personal/claude-code-plugins/plugins/dcc-statusline"
+P_MODEL="Opus 4.8"
+
+dcc_line_fit "dir git model" 200 0
+check "a wide budget renders at tier 0" "$DCC_LINE_TIER" "0"
+check "a wide budget drops nothing" "$DCC_LINE_DROPPED" "0"
+
+dcc_line_fit "dir git model" 60 0
+ok="no"; [ "$DCC_LINE_TIER" -gt 0 ] && ok="yes"
+check "a tight budget escalates past tier 0" "$ok" "yes"
+ok="no"; [ "$DCC_LINE_CELLS" -le 60 ] && ok="yes"
+check "the fitted line is within budget" "$ok" "yes"
+check "escalation drops no segments" "$DCC_LINE_DROPPED" "0"
+
+# A budget of zero means the width is unknown, not that nothing fits.
+dcc_line_fit "dir git model" 0 0
+check "an unknown width renders at tier 0" "$DCC_LINE_TIER" "0"
+check "an unknown width drops nothing" "$DCC_LINE_DROPPED" "0"
+
+# maxTier 0 pins the render and restores greedy dropping.
+DCC_MAX_TIER=0
+dcc_line_fit "dir git model" 40 0
+check "maxTier 0 never escalates" "$DCC_LINE_TIER" "0"
+ok="no"; [ "$DCC_LINE_DROPPED" -gt 0 ] && ok="yes"
+check "maxTier 0 falls back to dropping" "$ok" "yes"
+DCC_MAX_TIER=3
+
+# Escalation must terminate even when tier 3 still overflows, handing off to the
+# greedy drop rather than looping.
+DCC_GIT_BRANCH="$(printf 'x%.0s' $(seq 1 300))"
+dcc_line_fit "dir git model" 52 0
+check "a pathological branch still reaches tier 3" "$DCC_LINE_TIER" "3"
+ok="no"; [ "$DCC_LINE_CELLS" -le 52 ] && ok="yes"
+check "a pathological branch still fits the budget" "$ok" "yes"
+DCC_GIT_BRANCH="main"
+
+# The bad-config marker survives re-rendering.
+DCC_CONFIG_BAD=1
+dcc_line_fit "dir" 200 1
+check "the cfg marker is appended when asked" \
+  "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi | grep -c 'cfg?')" "1"
+dcc_line_fit "dir" 200 0
+check "the cfg marker is absent when not asked" \
+  "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi | grep -c 'cfg?')" "0"
+DCC_CONFIG_BAD=0
+
 finish

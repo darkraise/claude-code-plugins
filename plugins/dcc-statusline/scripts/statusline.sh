@@ -26,15 +26,6 @@ source "$DCC_DIR/lib/frame.sh"
 source "$DCC_DIR/lib/git.sh"
 source "$DCC_DIR/lib/segments.sh"
 
-_dcc_emit_line() { # _dcc_emit_line <segment-names>
-  local name
-  dcc_line_reset
-  for name in $1; do
-    dcc_segment "$name"
-    dcc_line_push
-  done
-}
-
 _dcc_strip_account() { # _dcc_strip_account <names> -> DCC_NAMES
   local name out=""
   DCC_NAMES=""
@@ -95,13 +86,10 @@ dcc_main() {
   if [ "$DCC_FRAME_ON" -eq 1 ]; then
     dcc_frame_top "$P_EMAIL" "$DCC_I_ACCOUNT" "$DCC_ICON_W"
     printf '%s\n' "$DCC_FRAME_OUT"
-    _dcc_emit_line "$names1"
-    [ "$DCC_CONFIG_BAD" -eq 1 ] && { dcc_seg_add "cfg?" red bold; dcc_line_push; }
-    dcc_line_build "$DCC_FRAME_BUDGET"
+    dcc_line_fit "$names1" "$DCC_FRAME_BUDGET" 1
     dcc_frame_row "$DCC_LINE_OUT" "$DCC_LINE_CELLS"
     printf '%s\n' "$DCC_FRAME_OUT"
-    _dcc_emit_line "$names2"
-    dcc_line_build "$DCC_FRAME_BUDGET"
+    dcc_line_fit "$names2" "$DCC_FRAME_BUDGET" 0
     dcc_frame_row "$DCC_LINE_OUT" "$DCC_LINE_CELLS"
     printf '%s\n' "$DCC_FRAME_OUT"
     dcc_frame_bottom
@@ -109,13 +97,10 @@ dcc_main() {
     return 0
   fi
 
-  _dcc_emit_line "$names1"
-  [ "$DCC_CONFIG_BAD" -eq 1 ] && { dcc_seg_add "cfg?" red bold; dcc_line_push; }
-  dcc_line_build
+  dcc_line_fit "$names1" 0 1
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 
-  _dcc_emit_line "$names2"
-  dcc_line_build
+  dcc_line_fit "$names2" 0 0
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 
   return 0

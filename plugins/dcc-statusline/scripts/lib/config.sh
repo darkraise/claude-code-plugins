@@ -38,6 +38,7 @@ DCC_LINE2=""
 printf -v DCC_SEP '  \302\267  '   # U+00B7 middle dot
 DCC_FRAME_MODE="auto"
 DCC_FRAME_MARGIN=4
+DCC_MAX_TIER=3
 DCC_ICON_MODE_CFG="auto"
 DCC_ICON_W_CFG=0
 DCC_P_DIR="blue"

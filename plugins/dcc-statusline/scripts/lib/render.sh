@@ -132,3 +132,19 @@ _dcc_trunc() { # _dcc_trunc <text> <maxlen> -> DCC_TRUNC
   # every such budget wrong by one.
   DCC_TRUNC="${s:0:$(( n - 1 ))}$DCC_ELLIPSIS"
 }
+
+DCC_LINE_TOTAL=0
+
+dcc_line_measure() { # -> DCC_LINE_TOTAL, the cells the pushed segments need
+  # Measures without building, so the escalation loop can reject a tier without
+  # paying for its string concatenation.
+  local i n=0 c=0
+  DCC_LINE_TOTAL=0
+  [ "${#DCC_SEGW[@]}" -gt 0 ] || return 0
+  for i in "${!DCC_SEGW[@]}"; do
+    [ "$c" -gt 0 ] && n=$(( n + DCC_SEP_CELLS ))
+    n=$(( n + DCC_SEGW[i] ))
+    c=$(( c + 1 ))
+  done
+  DCC_LINE_TOTAL="$n"
+}
