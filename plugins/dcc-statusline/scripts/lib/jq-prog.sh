@@ -38,6 +38,14 @@ DCC_DEFAULT_CONFIG='{
     ]
   },
   "accounts": {},
+  "segments": {
+    "dir": { "style": "" },
+    "git": { "counters": true, "maxBranch": 0 },
+    "model": { "short": false },
+    "ctx": { "label": "ctx" },
+    "5h": { "label": "5h" },
+    "7d": { "label": "7d" }
+  },
   "glyphs": {"filled":"\u25b0","empty":"\u25b1","dirty":"*"}
 }'
 
@@ -118,6 +126,13 @@ DCC_JQ_PROG='
   @sh "DCC_FRAME_MODE=\($c.frame // "auto")",
   @sh "DCC_FRAME_MARGIN=\(num($c.frameMargin; 4))",
   @sh "DCC_MAX_TIER=\(num($c.responsive.maxTier; 3))",
+  @sh "DCC_SEG_DIR_STYLE=\(str($c.segments.dir.style))",
+  @sh "DCC_SEG_GIT_COUNTERS=\(if $c.segments.git.counters == false then 0 else 1 end)",
+  @sh "DCC_SEG_GIT_MAXBRANCH=\(num($c.segments.git.maxBranch; 0))",
+  @sh "DCC_SEG_MODEL_SHORT=\(if $c.segments.model.short == true then 1 else 0 end)",
+  @sh "DCC_L_CTX=\(if ($c.segments.ctx.label|type) == "string" and ($c.segments.ctx.label|length) > 0 then $c.segments.ctx.label else "ctx" end)",
+  @sh "DCC_L_5H=\(if ($c.segments["5h"].label|type) == "string" and ($c.segments["5h"].label|length) > 0 then $c.segments["5h"].label else "5h" end)",
+  @sh "DCC_L_7D=\(if ($c.segments["7d"].label|type) == "string" and ($c.segments["7d"].label|length) > 0 then $c.segments["7d"].label else "7d" end)",
   @sh "DCC_ICON_MODE_CFG=\($c.icons.mode // "auto")",
   @sh "DCC_ICON_W_CFG=\(num($c.icons.width; 0))",
   @sh "DCC_P_DIR=\($c.palette.dir // "blue")",

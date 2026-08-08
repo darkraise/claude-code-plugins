@@ -94,6 +94,14 @@ dcc_segment() { # dcc_segment <name> [tier] -> DCC_SEG_OUT, DCC_SEG_CELLS
         esac
       fi
       [ -n "$cwd" ] || return 0
+
+      # A pinned style raises the effective tier but never lowers it. Pinning is
+      # a floor on how compact the path may be, not a veto on the line fitting.
+      case "${DCC_SEG_DIR_STYLE:-}" in
+        repo) [ "$tier" -lt 1 ] && tier=1 ;;
+        leaf) [ "$tier" -lt 3 ] && tier=3 ;;
+      esac
+
       _dcc_icon "$DCC_I_DIR" "$DCC_P_DIR"
 
       if [ -n "$root" ] && { [ "$cwd" = "$root" ] || [ "${cwd#"$root"/}" != "$cwd" ]; }; then

@@ -228,4 +228,40 @@ check "the cfg marker is absent when not asked" \
   "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi | grep -c 'cfg?')" "0"
 DCC_CONFIG_BAD=0
 
+# --- segment options ----------------------------------------------------------
+DCC_GIT_BRANCH="feature/responsive-tiers"
+DCC_GIT_DIRTY=1; DCC_GIT_AHEAD=2; DCC_GIT_BEHIND=0
+DCC_GIT_STAGED=3; DCC_GIT_UNSTAGED=0; DCC_GIT_UNTRACKED=2
+DCC_SEG_GIT_MAXBRANCH=0
+
+DCC_SEG_GIT_COUNTERS=0
+check "counters off hides the counts" "$(segt git 0)" "feature/responsive-tiers*"
+DCC_SEG_GIT_COUNTERS=1
+
+DCC_SEG_GIT_MAXBRANCH=8
+check "maxBranch truncates at tier 0" "$(segt git 0)" "feature…* ↑2 ●3 ?2"
+DCC_SEG_GIT_MAXBRANCH=0
+
+DCC_SEG_MODEL_SHORT=1
+check "model short applies at tier 0" "$(segt model 0)" "Opus"
+DCC_SEG_MODEL_SHORT=0
+
+DCC_L_CTX="context"
+check "a custom meter label is used" "$(segt ctx 0)" "context #####..... 47% · 94k"
+DCC_L_CTX="ctx"
+
+# dir.style pins the rendering below the line's tier, but never above it: a
+# pin is a floor on compactness, not a veto on fitting.
+DCC_GIT_ROOT="/home/u/Repos/Personal/claude-code-plugins"
+P_CWD="/home/u/Repos/Personal/claude-code-plugins/plugins/dcc-statusline"
+DCC_SEG_DIR_STYLE="repo"
+check "dir.style repo pins tier 0 to tier 1" "$(segt dir 0)" \
+  "claude-code-plugins/plugins/dcc-statusline"
+check "dir.style repo does not block tier 3" "$(segt dir 3)" "dcc-statusline"
+DCC_SEG_DIR_STYLE="leaf"
+check "dir.style leaf pins tier 0 to tier 3" "$(segt dir 0)" "dcc-statusline"
+DCC_SEG_DIR_STYLE=""
+check "no dir.style restores tier 0" "$(segt dir 0)" \
+  "~/Repos/Personal/claude-code-plugins/plugins/dcc-statusline"
+
 finish
