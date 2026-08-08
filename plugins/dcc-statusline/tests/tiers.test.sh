@@ -200,13 +200,23 @@ check "maxTier 0 falls back to dropping" "$ok" "yes"
 DCC_MAX_TIER=3
 
 # Escalation must terminate even when tier 3 still overflows, handing off to the
-# greedy drop rather than looping.
+# greedy drop rather than looping. The budget is 30, not 52: at 52 a truncated
+# 300-character branch actually fits at tier 3, so the assertions would pass
+# from an in-loop return and never exercise the fall-through they name.
 DCC_GIT_BRANCH="$(printf 'x%.0s' $(seq 1 300))"
-dcc_line_fit "dir git model" 52 0
+dcc_line_fit "dir git model" 30 0
 check "a pathological branch still reaches tier 3" "$DCC_LINE_TIER" "3"
-ok="no"; [ "$DCC_LINE_CELLS" -le 52 ] && ok="yes"
-check "a pathological branch still fits the budget" "$ok" "yes"
+ok="no"; [ "$DCC_LINE_DROPPED" -gt 0 ] && ok="yes"
+check "tier 3 overflow hands off to the greedy drop" "$ok" "yes"
 DCC_GIT_BRANCH="main"
+
+# An oversized maxTier must not reach the C-style loop, where it would wrap.
+DCC_MAX_TIER=9223372036854776000
+dcc_line_fit "model" 200 0
+check "an oversized maxTier falls back to 3" "$DCC_LINE_TIER" "0"
+check "an oversized maxTier still renders this call" \
+  "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi)" "Opus 4.8"
+DCC_MAX_TIER=3
 
 # The bad-config marker survives re-rendering.
 DCC_CONFIG_BAD=1

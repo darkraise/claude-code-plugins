@@ -250,8 +250,13 @@ dcc_line_fit() { # dcc_line_fit <names> <max-cells> <mark-bad-config>
   # which is also why the frame is off -- so there is nothing to fit against and
   # tier 0 stands.
   local names="$1" max="${2:-0}" mark="${3:-0}" tier top="${DCC_MAX_TIER:-3}"
-  case "$top" in ''|*[!0-9]*) top=3 ;; esac
-  [ "$top" -gt 3 ] && top=3
+  # Whitelist the four legal values rather than range-checking. A digit guard
+  # followed by [ "$top" -gt 3 ] fails open on a value past 64-bit range: the
+  # test does not evaluate false, it errors, the clamp is skipped, and the
+  # C-style loop below wraps the value -- either spinning without bound or
+  # never executing at all, which would leave DCC_LINE_OUT holding the
+  # previous line's segments.
+  case "$top" in 0|1|2|3) : ;; *) top=3 ;; esac
   for (( tier = 0; tier <= top; tier++ )); do
     _dcc_render_line "$names" "$tier" "$mark"
     DCC_LINE_TIER="$tier"
