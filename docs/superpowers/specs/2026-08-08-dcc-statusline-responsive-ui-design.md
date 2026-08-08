@@ -79,14 +79,19 @@ that a tier mismatch would break.
 | | tier 0 — full | tier 1 — compact | tier 2 — tight | tier 3 — minimal |
 |---|---|---|---|---|
 | `dir` | `~/Repos/Personal/` `claude-code-plugins` `/plugins/dcc-statusline` | ancestry dropped: `claude-code-plugins/plugins/dcc-statusline` | `claude-code-plugins/…/dcc-statusline` | `dcc-statusline` |
-| `git` | `main* ↑2 ↓1 ●3 ○2 ?2` | unchanged | `main*` | `main*`, branch truncated to `maxBranch` |
+| `git` | `main* ↑2 ↓1 ●3 ○2 ?2` | unchanged | `main*` | `main*`, branch truncated to `maxBranch`, or to 12 when `maxBranch` is 0 |
 | `model` | `Opus 4.8` | unchanged | unchanged | first word: `Opus` |
 | meters | `ctx ▰▰▰▰▰▱▱▱▱▱ 47% · 94k` | bar at 60% of configured width | bar at 40%, suffix dropped | no bar: `ctx 47%` |
 
 Meter widths at tiers 1 and 2 are `(width * 60 + 50) / 100` and
 `(width * 40 + 50) / 100` — integer arithmetic, rounding to nearest, matching the
-existing fill calculation in `dcc_bar`. Both clamp to a minimum of 1, so a meter
-configured at width 2 does not lose its bar until tier 3.
+existing fill calculation in `dcc_bar`. A width below two cells drops the bar
+entirely, at every tier including tier 0: a one-cell bar reads as empty at any
+figure under 100%, so the percentage carries the reading alone. This is a
+deliberate, human-ruled exception to the tier-0 byte-identity rule — the only
+one. Widths are also clamped to at most 64 cells; `dcc_bar` builds its string
+by repeated append, quadratic in the width, and an unbounded configured width
+would freeze the continuously-redrawing render.
 
 Every other segment — `effort`, `fast`, `agent`, `style`, `account`, `cost`,
 `time` — renders identically at all four tiers. They are already short, and a
@@ -196,7 +201,8 @@ Walks a parsed config reporting: unknown keys, values of the wrong type, invalid
 colour names, invalid segment names, out-of-range integers, and unknown theme
 names. Each finding names the key path, the value received, and what is valid.
 
-Sourced by `install.sh` (for `doctor`) and `preview.sh`. **Never** sourced by
+Sourced by `install.sh` (for `doctor`) alone; `preview.sh` renders without it.
+**Never** sourced by
 `statusline.sh`. This is the boundary that protects the process budget, and it is
 asserted by a test that greps `statusline.sh`'s source list.
 
@@ -205,9 +211,11 @@ silently to defaults and still shows the red `cfg?` token. Diagnosis belongs in
 `doctor`, where it can be read, not in a status line that has four columns to
 spare.
 
-### `dcc-statusline.schema.json`
+### `scripts/dcc-statusline.schema.json`
 
-A JSON Schema for the config, shipped at the plugin root. `install.sh` seeds
+A JSON Schema for the config, shipped under `scripts/` so that
+`dcc_copy_scripts` carries it to an installed copy — a file at the plugin root
+would never reach `~/.claude/dcc-statusline/`. `install.sh` seeds
 `"$schema"` into a newly created config pointing at the installed copy, so an
 editor autocompletes and validates while typing. `doctor` reports whether the
 config validates against it when a validator is available, falling back to
@@ -237,10 +245,10 @@ the handlers it dispatches to for no gain in comprehension.
 New files:
 
 ```
-scripts/lib/jq-prog.sh        the single jq program
-scripts/lib/validate.sh       config diagnostics, off the render path
-scripts/preview.sh            multi-width preview
-dcc-statusline.schema.json    config schema
+scripts/lib/jq-prog.sh              the single jq program
+scripts/lib/validate.sh             config diagnostics, off the render path
+scripts/preview.sh                  multi-width preview
+scripts/dcc-statusline.schema.json  config schema, copied with the scripts
 ```
 
 ## Testing

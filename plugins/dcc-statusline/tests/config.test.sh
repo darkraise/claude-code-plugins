@@ -6,6 +6,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib.sh"
 source "$HERE/../scripts/lib/path.sh"
+source "$HERE/../scripts/lib/jq-prog.sh"
 source "$HERE/../scripts/lib/config.sh"
 F="$HERE/fixtures"
 
@@ -101,7 +102,7 @@ check "absent email yields empty"          "$P_EMAIL"   ""
 DCC_ACCT_KEY="~/.claude-alt"
 dcc_parse_all "$(cat "$F/full.json")" "$F/config-valid.json" "$F/claude.json"
 check "user lines replace defaults"        "$DCC_LINE1" "dir model"
-check "user separator replaces default"    "$DCC_SEP"   " | "
+check "user separator replaces default"    "$DCC_SEP1"  " | "
 check "user meter width replaces default"  "$DCC_W_CTX" "4"
 check "unset meter width keeps default"    "$DCC_W_5H"  "8"
 check "out-of-order ramp is sorted"        "$DCC_RAMP"  "0:green: 90:red:bold"
@@ -195,6 +196,46 @@ check "user icon mode overrides"    "$DCC_ICON_MODE_CFG" "nerd"
 check "user icon width overrides"   "$DCC_ICON_W_CFG"    "1"
 check "user palette entry overrides" "$DCC_P_DIR"        "green"
 check "unset palette entries keep defaults" "$DCC_P_GIT" "magenta"
+rm -f "$cfg"
+
+# --- segment options -----------------------------------------------------------
+cfg="$(mktemp)"
+cat > "$cfg" <<'JSON'
+{ "segments": {
+    "dir":   { "style": "leaf" },
+    "git":   { "counters": false, "maxBranch": 14 },
+    "model": { "short": true },
+    "ctx":   { "label": "context" },
+    "5h":    { "label": "session" },
+    "7d":    { "label": "week" } } }
+JSON
+dcc_parse_all "$(cat "$F/full.json")" "$cfg" /dev/null
+check "dir style comes through"     "$DCC_SEG_DIR_STYLE"     "leaf"
+check "counters false becomes 0"    "$DCC_SEG_GIT_COUNTERS"  "0"
+check "maxBranch comes through"     "$DCC_SEG_GIT_MAXBRANCH" "14"
+check "model short true becomes 1"  "$DCC_SEG_MODEL_SHORT"   "1"
+check "the ctx label comes through" "$DCC_L_CTX"             "context"
+check "the 5h label comes through"  "$DCC_L_5H"              "session"
+check "the 7d label comes through"  "$DCC_L_7D"              "week"
+rm -f "$cfg"
+
+# The whole object is optional: absent, every prior default stands.
+dcc_parse_all "$(cat "$F/full.json")" /dev/null /dev/null
+check "no segments object leaves the dir style empty" "$DCC_SEG_DIR_STYLE"     ""
+check "no segments object keeps counters on"          "$DCC_SEG_GIT_COUNTERS"  "1"
+check "no segments object keeps maxBranch at 0"       "$DCC_SEG_GIT_MAXBRANCH" "0"
+check "no segments object keeps the model long"       "$DCC_SEG_MODEL_SHORT"   "0"
+check "no segments object keeps the ctx label"        "$DCC_L_CTX"             "ctx"
+check "no segments object keeps the 7d label"         "$DCC_L_7D"              "7d"
+
+# An empty or non-string label falls back rather than rendering a bare leading
+# space where "ctx " used to be, which would read as a rendering bug.
+cfg="$(mktemp)"
+printf '{ "segments": { "ctx": { "label": "" }, "5h": { "label": 42 } } }' > "$cfg"
+dcc_parse_all "$(cat "$F/full.json")" "$cfg" /dev/null
+check "an empty label falls back"         "$DCC_L_CTX"      "ctx"
+check "a non-string label falls back"     "$DCC_L_5H"       "5h"
+check "a bad label is not a config error" "$DCC_CONFIG_BAD" "0"
 rm -f "$cfg"
 
 finish

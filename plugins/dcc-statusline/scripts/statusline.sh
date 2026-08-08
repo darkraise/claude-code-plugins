@@ -17,6 +17,7 @@ DCC_DIR="${BASH_SOURCE[0]%/*}"
 [ "$DCC_DIR" = "${BASH_SOURCE[0]}" ] && DCC_DIR="."
 
 source "$DCC_DIR/lib/path.sh"
+source "$DCC_DIR/lib/jq-prog.sh"
 source "$DCC_DIR/lib/color.sh"
 source "$DCC_DIR/lib/config.sh"
 source "$DCC_DIR/lib/icons.sh"
@@ -25,27 +26,22 @@ source "$DCC_DIR/lib/frame.sh"
 source "$DCC_DIR/lib/git.sh"
 source "$DCC_DIR/lib/segments.sh"
 
-_dcc_emit_line() { # _dcc_emit_line <segment-names>
-  local name
-  dcc_line_reset
-  for name in $1; do
-    dcc_segment "$name"
-    dcc_line_push
-  done
-}
-
 _dcc_strip_account() { # _dcc_strip_account <names> -> DCC_NAMES
   local name out=""
   DCC_NAMES=""
+  # Glob off across the unquoted split: a configured name like "*" would
+  # otherwise expand to the working directory's filenames.
+  set -f
   for name in $1; do
     [ "$name" = "account" ] && continue
     out="$out $name"
   done
+  set +f
   DCC_NAMES="${out# }"
 }
 
 dcc_main() {
-  local names1 names2
+  local names1 names2 DCC_TIER1=0
 
   IFS= read -r -d '' input || true
   [ -n "$input" ] || return 0
@@ -63,7 +59,6 @@ dcc_main() {
   dcc_icons_init
   dcc_frame_init
   dcc_frame_budget
-  dcc_sep_cells "${#DCC_SEP}"
 
   # Tests freeze the clock; %(%s)T is a bash builtin, so this costs no fork.
   [ -n "${DCC_NOW:-}" ] || printf -v DCC_NOW '%(%s)T' -1
@@ -94,29 +89,31 @@ dcc_main() {
   if [ "$DCC_FRAME_ON" -eq 1 ]; then
     dcc_frame_top "$P_EMAIL" "$DCC_I_ACCOUNT" "$DCC_ICON_W"
     printf '%s\n' "$DCC_FRAME_OUT"
-    _dcc_emit_line "$names1"
-    [ "$DCC_CONFIG_BAD" -eq 1 ] && { dcc_seg_add "cfg?" red bold; dcc_line_push; }
-    dcc_line_build "$DCC_FRAME_BUDGET"
+    DCC_SEP="$DCC_SEP1"; dcc_sep_cells "${#DCC_SEP1}"
+    dcc_line_fit "$names1" "$DCC_FRAME_BUDGET" 1
+    DCC_TIER1="$DCC_LINE_TIER"
     dcc_frame_row "$DCC_LINE_OUT" "$DCC_LINE_CELLS"
     printf '%s\n' "$DCC_FRAME_OUT"
-    _dcc_emit_line "$names2"
-    dcc_line_build "$DCC_FRAME_BUDGET"
+    DCC_SEP="$DCC_SEP2"; dcc_sep_cells "${#DCC_SEP2}"
+    dcc_line_fit "$names2" "$DCC_FRAME_BUDGET" 0
     dcc_frame_row "$DCC_LINE_OUT" "$DCC_LINE_CELLS"
     printf '%s\n' "$DCC_FRAME_OUT"
     dcc_frame_bottom
     printf '%s\n' "$DCC_FRAME_OUT"
+    [ -n "${DCC_PREVIEW_TIERS:-}" ] && printf 'DCC_TIERS %s/%s\n' "$DCC_TIER1" "$DCC_LINE_TIER"
     return 0
   fi
 
-  _dcc_emit_line "$names1"
-  [ "$DCC_CONFIG_BAD" -eq 1 ] && { dcc_seg_add "cfg?" red bold; dcc_line_push; }
-  dcc_line_build
+  DCC_SEP="$DCC_SEP1"; dcc_sep_cells "${#DCC_SEP1}"
+  dcc_line_fit "$names1" 0 1
+  DCC_TIER1="$DCC_LINE_TIER"
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 
-  _dcc_emit_line "$names2"
-  dcc_line_build
+  DCC_SEP="$DCC_SEP2"; dcc_sep_cells "${#DCC_SEP2}"
+  dcc_line_fit "$names2" 0 0
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 
+  [ -n "${DCC_PREVIEW_TIERS:-}" ] && printf 'DCC_TIERS %s/%s\n' "$DCC_TIER1" "$DCC_LINE_TIER"
   return 0
 }
 

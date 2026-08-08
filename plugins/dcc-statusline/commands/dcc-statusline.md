@@ -1,6 +1,6 @@
 ---
 description: Install, remove, or diagnose the dcc-statusline status line
-argument-hint: "[install|uninstall|status|doctor] [--all]"
+argument-hint: "[install|uninstall|status|doctor|preview|config] [--all]"
 allowed-tools: Bash, Read, Edit
 ---
 
@@ -54,10 +54,34 @@ It also reports the detected icon mode and icon cell width, printed as
 (the mode should be `unicode`) or when the box's right edge looks ragged (the
 width is likely wrong — set `icons.width` in the config to correct it).
 
-## Preview
-To show the user what their line looks like right now, pipe a payload through the
-installed script:
+## `preview`
+Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/preview.sh" $ARGUMENTS`.
 
-```bash
-printf '%s' '{"workspace":{"current_dir":"'"$PWD"'"},"model":{"display_name":"Opus"},"cost":{"total_cost_usd":1.2},"context_window":{"used_percentage":47,"total_input_tokens":94210},"rate_limits":{"five_hour":{"used_percentage":23,"resets_at":'"$(( $(date +%s) + 13200 ))"'},"seven_day":{"used_percentage":41,"resets_at":'"$(( $(date +%s) + 500000 ))"'}}}' | bash ~/.claude/dcc-statusline/statusline.sh
-```
+It renders the user's real config against a sample payload at 48, 60, 80, 120 and
+200 columns, labelling each block with the width and the tier each line settled
+on — except a block too narrow to frame, which is labelled `unframed` instead,
+since with no frame there is no width budget to tier against. Relay the output
+verbatim inside a fenced block — reformatting it destroys the alignment that is
+the entire point.
+
+Accepts `--width N` for a single width, `--theme NAME` to try a theme without
+editing the config, and `--config PATH` for a file that is not installed.
+
+If every block reports `tier 0`, the terminal is wide enough that nothing shrinks;
+say so rather than leaving the user to wonder whether the feature works.
+
+## `config`
+Guided setup. Do not run a script for this one.
+
+1. Read `~/.claude/dcc-statusline.json`, or note that it does not exist yet.
+2. Ask which theme they want: `default`, `minimal`, `mono`, or `vivid`.
+3. Ask which segments belong on each of the two lines. Valid names are `dir`,
+   `git`, `model`, `effort`, `fast`, `agent`, `style`, `account`, `ctx`, `cost`,
+   `5h`, `7d`, `time`.
+4. If they run more than one Claude account, ask for a frame colour per account
+   and write it under `accounts`, keyed by config directory in `~/...` form.
+5. Edit the file, keeping the `$schema` key at the top if present.
+6. Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/preview.sh"` and show the result.
+
+Ask one question at a time. Never overwrite a key the user did not ask you to
+change.

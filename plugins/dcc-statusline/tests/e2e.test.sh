@@ -65,6 +65,19 @@ check "a malformed config renders with a marker" \
   "$(printf '%s' "$out" | grep -c 'cfg?')" "1"
 rm -f "$badcfg"
 
+# A glob as a segment name must stay a literal unknown name. Unquoted, the
+# name loops would expand "*" against the working directory, and a file named
+# after a segment would render one the user never configured. The directory
+# plants exactly that trap: a file named "time".
+cfgg="$(mktemp)"; printf '{ "lines": [["*"],["cost"]], "frame": "none" }' > "$cfgg"
+globdir="$(mktemp -d)"; touch "$globdir/time"
+out="$(cd "$globdir" && DCC_STATUSLINE_CONFIG="$cfgg" bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+check "a glob segment name renders nothing" \
+  "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "1"
+check "the remaining line is the cost chip alone" \
+  "$(printf '%s\n' "$out" | sed -n 1p)" "\$1.20"
+rm -f "$cfgg"; rm -rf "$globdir"
+
 # Tint and ramp coexist: the ramp paints the meters regardless of mode, while
 # which element carries the account tint depends on whether the frame is on --
 # framed mode puts it on the top rule, unframed mode puts it on the account
@@ -193,6 +206,88 @@ top="$(DCC_STATUSLINE_CONFIG="$cfgm" COLUMNS=100 bash "$SCRIPT" < "$F/full.json"
 dcc_cells "$top"
 check "a margin of zero draws the full reported width" "$DCC_CELLS" "100"
 rm -f "$cfgm"
+
+# --- frame integrity across widths --------------------------------------------
+# Tier escalation changes how many cells a row occupies, so every width has to
+# be checked, not just the one that happens to fit at tier 0. A row that is one
+# cell wrong leaves a ragged right wall down the entire box.
+DCC_ICON_W=0
+for cols in 52 60 72 88 100 140 200; do
+  out="$(COLUMNS=$cols bash "$SCRIPT" < "$F/full.json")"
+  want=$(( cols - 4 ))   # the default frameMargin
+  check "COLUMNS=$cols prints four rows" \
+    "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "4"
+  rowno=0
+  while IFS= read -r row; do
+    rowno=$(( rowno + 1 ))
+    dcc_cells "$row"
+    check "COLUMNS=$cols row $rowno measures $want cells" "$DCC_CELLS" "$want"
+  done < <(printf '%s\n' "$out")
+done
+
+# The same sweep in nerd mode, where every icon charges two cells rather than
+# one. A tier that forgets to charge for an icon it still emits shows up here
+# and nowhere else.
+DCC_ICON_W=2
+for cols in 52 88 140; do
+  out="$(COLUMNS=$cols DCC_ICONS=nerd bash "$SCRIPT" < "$F/full.json")"
+  want=$(( cols - 4 ))
+  rowno=0
+  while IFS= read -r row; do
+    rowno=$(( rowno + 1 ))
+    dcc_cells "$row"
+    check "nerd COLUMNS=$cols row $rowno measures $want cells" "$DCC_CELLS" "$want"
+  done < <(printf '%s\n' "$out")
+done
+DCC_ICON_W=0
+
+# maxTier 0 must reproduce today's behaviour: no escalation, and the greedy drop
+# doing the fitting.
+#
+# Width alone cannot show that. dcc_frame_row pads every row to the frame width
+# whichever tier produced it, so a width assertion passes identically with
+# escalation on or off -- it re-tests padding, not the config. Two things
+# actually distinguish the pinned render: it differs from the default at the
+# same width, and tier 0 is the only tier that never elides a path or truncates
+# a branch, so no ellipsis can appear in it.
+cfgt="$(mktemp)"; printf '{ "responsive": { "maxTier": 0 } }' > "$cfgt"
+out="$(DCC_STATUSLINE_CONFIG="$cfgt" COLUMNS=60 bash "$SCRIPT" < "$F/full.json")"
+rowno=0
+while IFS= read -r row; do
+  rowno=$(( rowno + 1 ))
+  dcc_cells "$row"
+  check "maxTier 0 row $rowno still measures 56 cells" "$DCC_CELLS" "56"
+done < <(printf '%s\n' "$out")
+
+pinned="$(printf '%s' "$out" | strip_ansi)"
+defaulted="$(COLUMNS=60 bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+same="no"; [ "$pinned" = "$defaulted" ] && same="yes"
+check "maxTier 0 changes what renders at this width" "$same" "no"
+check "maxTier 0 never elides a path or truncates a branch" \
+  "$(printf '%s' "$pinned" | grep -c '…')" "0"
+rm -f "$cfgt"
+
+# --- per-line separators ------------------------------------------------------
+cfgs="$(mktemp)"
+printf '{ "separator": [" | ", " / "], "frame": "none" }' > "$cfgs"
+out="$(DCC_STATUSLINE_CONFIG="$cfgs" bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+check "line one uses the first separator" \
+  "$(printf '%s\n' "$out" | sed -n 1p | grep -c ' | ')" "1"
+check "line two uses the second separator" \
+  "$(printf '%s\n' "$out" | sed -n 2p | grep -c ' / ')" "1"
+
+# A one-element array applies to both lines.
+printf '{ "separator": [" | "], "frame": "none" }' > "$cfgs"
+out="$(DCC_STATUSLINE_CONFIG="$cfgs" bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+check "a short array reuses its last element" \
+  "$(printf '%s\n' "$out" | sed -n 2p | grep -c ' | ')" "1"
+
+# An empty array is not a separator; the default stands.
+printf '{ "separator": [], "frame": "none" }' > "$cfgs"
+out="$(DCC_STATUSLINE_CONFIG="$cfgs" bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+check "an empty array falls back to the default" \
+  "$(printf '%s\n' "$out" | sed -n 1p | grep -c '  ·  ')" "1"
+rm -f "$cfgs"
 
 rm -rf "$fakehome"
 finish

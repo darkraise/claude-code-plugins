@@ -17,7 +17,7 @@
 - **`LC_ALL=C.UTF-8`** is set by `statusline.sh`; without it bash measures bytes, not characters. Tests that measure cells must export it themselves.
 - **All glyphs in `scripts/` are written as octal UTF-8 escapes** (`printf -v v '\342\200\246'`) so source files stay pure ASCII.
 - **Any text whose character count differs from its terminal cell count must pass an explicit cell count to `dcc_seg_add`.** ASCII and single-cell Unicode may omit it.
-- **Tier 0 output must remain byte-for-byte identical to today's** for every existing fixture.
+- **Tier 0 output must remain byte-for-byte identical to today's** for every existing fixture. One ruled exception: a meter configured to a width below 2 renders with no bar at every tier, including tier 0. Previously width 1 produced a single empty cell that reads as 0% at any reading under 100%, and width 0 produced a doubled space. Both are misleading rather than merely different, and the `minimal` theme sets width 0 deliberately. Default widths (10/8/8) are unaffected, so no existing fixture changes.
 - **Plugin name prefix `dcc-`** must agree across `plugins/dcc-statusline/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and the directory name.
 - **Run `claude plugin validate .` from the repo root before committing any manifest change.**
 - **Commit format:** `<type>(<scope>): <subject>`, subject ≤50 chars, imperative, no period.
@@ -34,7 +34,7 @@
 | `plugins/dcc-statusline/scripts/lib/jq-prog.sh` | The single jq program, the default config, and the theme table |
 | `plugins/dcc-statusline/scripts/lib/validate.sh` | Config diagnostics. Off the render path. Forks freely |
 | `plugins/dcc-statusline/scripts/preview.sh` | Renders the real config at several widths |
-| `plugins/dcc-statusline/dcc-statusline.schema.json` | JSON Schema for the config file |
+| `plugins/dcc-statusline/scripts/dcc-statusline.schema.json` | JSON Schema for the config file, and the single source of truth for valid key, segment and theme names |
 | `plugins/dcc-statusline/tests/tiers.test.sh` | Per-segment tier renderings and monotonic shrink |
 | `plugins/dcc-statusline/tests/theme.test.sh` | Theme table and merge order |
 | `plugins/dcc-statusline/tests/validate.test.sh` | Diagnostics, plus the budget-boundary assertion |
@@ -193,8 +193,8 @@ check "trunc with maxlen 0 is a no-op" "$DCC_TRUNC" "feature/responsive-tiers"
 _dcc_trunc "main" 10
 check "trunc leaves a short string alone" "$DCC_TRUNC" "main"
 _dcc_trunc "feature/responsive-tiers" 10
-check "trunc cuts and ellipsises" "$DCC_TRUNC" "feature/re…"
-check "trunc keeps maxlen characters plus the ellipsis" "${#DCC_TRUNC}" "11"
+check "trunc cuts and ellipsises" "$DCC_TRUNC" "feature/r…"
+check "trunc never exceeds maxlen" "${#DCC_TRUNC}" "10"
 
 # --- dir ----------------------------------------------------------------------
 HOME="/home/u"
@@ -266,11 +266,15 @@ _dcc_trunc() { # _dcc_trunc <text> <maxlen> -> DCC_TRUNC
   case "$n" in ''|*[!0-9]*) return 0 ;; esac
   [ "$n" -gt 0 ] || return 0
   [ "${#s}" -gt "$n" ] || return 0
-  DCC_TRUNC="${s:0:$n}$DCC_ELLIPSIS"
+  # maxlen-1 characters, so the ellipsis brings the total back to exactly
+  # maxlen. Callers budget width against this bound -- segments.git.maxBranch
+  # means "at most this many cells" -- so a result one cell over would make
+  # every such budget wrong by one.
+  DCC_TRUNC="${s:0:$(( n - 1 ))}$DCC_ELLIPSIS"
 }
 ```
 
-Note the result is `n+1` characters and `n+1` cells — the ellipsis is one cell under `LC_ALL=C.UTF-8`, so `dcc_seg_add`'s default `${#text}` count is correct and no explicit cell count is needed.
+The result is exactly `n` characters and `n` cells: the ellipsis is one cell under `LC_ALL=C.UTF-8`, so `dcc_seg_add`'s default `${#text}` count is correct and no explicit cell count is needed. At `n` of 1 the slice is empty and the result is the ellipsis alone, which still honours the bound.
 
 - [ ] **Step 4: Add the tier parameter and the `dir` tiers to `segments.sh`**
 
@@ -372,7 +376,7 @@ check "git tier 0 shows every counter" "$(segt git 0)" \
 check "git tier 1 shows every counter" "$(segt git 1)" \
   "feature/responsive-tiers* ↑2 ●3 ?2"
 check "git tier 2 drops the counters" "$(segt git 2)" "feature/responsive-tiers*"
-check "git tier 3 truncates the branch" "$(segt git 3)" "feature/resp…*"
+check "git tier 3 truncates the branch" "$(segt git 3)" "feature/res…*"
 
 DCC_GIT_BRANCH="main"
 check "git tier 3 leaves a short branch alone" "$(segt git 3)" "main*"
@@ -394,13 +398,13 @@ check "ctx tier 2 narrows further and drops the suffix" "$(segt ctx 2)" \
   "ctx ##.. 47%"
 check "ctx tier 3 drops the bar entirely" "$(segt ctx 3)" "ctx 47%"
 
-# A meter configured to width 2 scales to a single cell at tier 2 rather than
-# rounding its bar away entirely; only tier 3 removes a bar. dcc_bar's existing
-# "never look full below 100%" clamp then empties that one cell, which is
-# degenerate but honest -- a one-cell bar cannot show both states, and the
-# percentage beside it carries the reading regardless.
+# A meter configured to width 2 scales below two cells at tier 2. A one-cell bar
+# cannot show both states -- dcc_bar's "never look full below 100%" clamp empties
+# it, so it would read as 0% at 47% -- so the bar is dropped instead of shown
+# misleadingly, and the percentage carries the reading alone.
 DCC_W_CTX=2
-check "a width-2 meter keeps a bar cell at tier 2" "$(segt ctx 2)" "ctx . 47%"
+check "a width-2 meter drops its bar at tier 2" "$(segt ctx 2)" "ctx 47%"
+check "a width-2 meter keeps its bar at tier 0" "$(segt ctx 0)" "ctx #. 47% · 94k"
 DCC_W_CTX=10
 
 # --- monotonic shrink, every shrinking segment --------------------------------
@@ -446,10 +450,14 @@ _dcc_meter() { # _dcc_meter <icon> <label> <pct> <width> <reset-epoch> <tokens|"
   # line, and the percentage beside it says the same thing exactly.
   case "$tier" in
     0) : ;;
-    1) width=$(( (width * 60 + 50) / 100 )); [ "$width" -lt 1 ] && width=1 ;;
-    2) width=$(( (width * 40 + 50) / 100 )); [ "$width" -lt 1 ] && width=1 ;;
+    1) width=$(( (width * 60 + 50) / 100 )) ;;
+    2) width=$(( (width * 40 + 50) / 100 )) ;;
     *) width=0 ;;
   esac
+  # A one-cell bar carries no information: dcc_bar's existing "never look full
+  # below 100%" clamp empties it, so it would read as 0% at every reading under
+  # 100. Below two cells the bar is dropped rather than shown misleadingly.
+  [ "$width" -lt 2 ] && width=0
   dcc_ramp "$pct"
   dcc_bar "$pct" "$width"
   _dcc_icon "$icon" "$DCC_P_MUTE"
@@ -577,7 +585,7 @@ git commit -m "feat(statusline): shrink git, model and meters by tier"
   - `dcc_line_measure` → `DCC_LINE_TOTAL`, the cells the pushed segments would occupy including separators, without building the string.
   - `_dcc_render_line <names> <tier> <mark-bad-config>` — fills `DCC_SEGS`/`DCC_SEGW` at the given tier. `mark-bad-config` of `1` appends the red `cfg?` chip when `DCC_CONFIG_BAD` is `1`.
   - `dcc_line_fit <names> <max-cells> <mark-bad-config>` → `DCC_LINE_OUT`, `DCC_LINE_CELLS`, `DCC_LINE_DROPPED`, `DCC_LINE_TIER`. A `max-cells` of `0` means no known width: renders at tier 0 only.
-  - `DCC_MAX_TIER` — from `responsive.maxTier`, default `3`, clamped to `0`–`3`.
+  - `DCC_MAX_TIER` — from `responsive.maxTier`, default `3`. Any value that is not exactly `0`, `1`, `2` or `3` — negative, oversized, non-numeric, or empty — falls back to `3`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -620,13 +628,23 @@ check "maxTier 0 falls back to dropping" "$ok" "yes"
 DCC_MAX_TIER=3
 
 # Escalation must terminate even when tier 3 still overflows, handing off to the
-# greedy drop rather than looping.
+# greedy drop rather than looping. The budget is 30, not 52: at 52 a truncated
+# 300-character branch actually fits at tier 3, so the assertions would pass
+# from an in-loop return and never exercise the fall-through they name.
 DCC_GIT_BRANCH="$(printf 'x%.0s' $(seq 1 300))"
-dcc_line_fit "dir git model" 52 0
+dcc_line_fit "dir git model" 30 0
 check "a pathological branch still reaches tier 3" "$DCC_LINE_TIER" "3"
-ok="no"; [ "$DCC_LINE_CELLS" -le 52 ] && ok="yes"
-check "a pathological branch still fits the budget" "$ok" "yes"
+ok="no"; [ "$DCC_LINE_DROPPED" -gt 0 ] && ok="yes"
+check "tier 3 overflow hands off to the greedy drop" "$ok" "yes"
 DCC_GIT_BRANCH="main"
+
+# An oversized maxTier must not reach the C-style loop, where it would wrap.
+DCC_MAX_TIER=9223372036854776000
+dcc_line_fit "model" 200 0
+check "an oversized maxTier falls back to 3" "$DCC_LINE_TIER" "0"
+check "an oversized maxTier still renders this call" \
+  "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi)" "Opus 4.8"
+DCC_MAX_TIER=3
 
 # The bad-config marker survives re-rendering.
 DCC_CONFIG_BAD=1
@@ -698,8 +716,13 @@ dcc_line_fit() { # dcc_line_fit <names> <max-cells> <mark-bad-config>
   # which is also why the frame is off -- so there is nothing to fit against and
   # tier 0 stands.
   local names="$1" max="${2:-0}" mark="${3:-0}" tier top="${DCC_MAX_TIER:-3}"
-  case "$top" in ''|*[!0-9]*) top=3 ;; esac
-  [ "$top" -gt 3 ] && top=3
+  # Whitelist the four legal values rather than range-checking. A digit guard
+  # followed by [ "$top" -gt 3 ] fails open on a value past 64-bit range: the
+  # test does not evaluate false, it errors, the clamp is skipped, and the
+  # C-style loop below wraps the value -- either spinning without bound or
+  # never executing at all, which would leave DCC_LINE_OUT holding the
+  # previous line's segments.
+  case "$top" in 0|1|2|3) : ;; *) top=3 ;; esac
   for (( tier = 0; tier <= top; tier++ )); do
     _dcc_render_line "$names" "$tier" "$mark"
     DCC_LINE_TIER="$tier"
@@ -839,8 +862,15 @@ for cols in 52 88 140; do
 done
 DCC_ICON_W=0
 
-# maxTier 0 must reproduce today's behaviour exactly: no escalation, and the
-# greedy drop doing the fitting.
+# maxTier 0 must reproduce today's behaviour: no escalation, and the greedy drop
+# doing the fitting.
+#
+# Width alone cannot show that. dcc_frame_row pads every row to the frame width
+# whichever tier produced it, so a width assertion passes identically with
+# escalation on or off -- it re-tests padding, not the config. Two things
+# actually distinguish the pinned render: it differs from the default at the
+# same width, and tier 0 is the only tier that never elides a path or truncates
+# a branch, so no ellipsis can appear in it.
 cfgt="$(mktemp)"; printf '{ "responsive": { "maxTier": 0 } }' > "$cfgt"
 out="$(DCC_STATUSLINE_CONFIG="$cfgt" COLUMNS=60 bash "$SCRIPT" < "$F/full.json")"
 rowno=0
@@ -849,6 +879,13 @@ while IFS= read -r row; do
   dcc_cells "$row"
   check "maxTier 0 row $rowno still measures 56 cells" "$DCC_CELLS" "56"
 done < <(printf '%s\n' "$out")
+
+pinned="$(printf '%s' "$out" | strip_ansi)"
+defaulted="$(COLUMNS=60 bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+same="no"; [ "$pinned" = "$defaulted" ] && same="yes"
+check "maxTier 0 changes what renders at this width" "$same" "no"
+check "maxTier 0 never elides a path or truncates a branch" \
+  "$(printf '%s' "$pinned" | grep -c '…')" "0"
 rm -f "$cfgt"
 ```
 
@@ -948,6 +985,50 @@ check "an unknown theme is not a parse error"  "$DCC_CONFIG_BAD" "0"
 parse_with '{ "theme": 42 }'
 check "a non-string theme falls back to default" "$DCC_P_DIR"      "blue"
 check "a non-string theme is not a parse error"  "$DCC_CONFIG_BAD" "0"
+
+# Arrays must be replaced wholesale, not merged element-wise. Nothing else in
+# this file inspects lines or the ramp, so an element-wise merge -- which would
+# produce a nonsense colour progression -- would otherwise pass every assertion.
+parse_with '{ "theme": "minimal" }'
+check "minimal replaces the line list wholesale" "$DCC_LINE1" "dir git model"
+parse_with '{ "theme": "mono" }'
+check "mono replaces the ramp wholesale" "$DCC_RAMP" "0:gray: 75:white: 90:white:bold"
+
+# --- the fallback chain ------------------------------------------------------
+# dcc_parse_all has four jq invocations: a primary plus three fallbacks that
+# progressively drop the config and the account file. Every one needs
+# --argjson themes. A missed one fails with "$themes is not defined", and the
+# chain swallows that failure silently -- so the symptom is a theme that works
+# until one of those files happens to be malformed. These four cases are what
+# stop a future edit from reintroducing that without breaking any test.
+parse_with_who() { # parse_with_who <config-json> <who-json> -> DCC_*, PARSE_RC
+  local cfg who
+  cfg="$(mktemp)"; who="$(mktemp)"
+  printf '%s' "$1" > "$cfg"; printf '%s' "$2" > "$who"
+  dcc_parse_all "$PAYLOAD" "$cfg" "$who"; PARSE_RC=$?
+  rm -f "$cfg" "$who"
+}
+
+# Branch 3: the account file is corrupt, the config is not. The theme must
+# survive. Were this branch missing its themes argument it would fail through to
+# branch 4, which drops the config too, and the hue would come back "blue".
+parse_with_who '{ "theme": "mono" }' '{ not json'
+check "a theme survives a corrupt account file" "$DCC_P_DIR"      "white"
+check "a corrupt account file is not a config error" "$DCC_CONFIG_BAD" "0"
+
+# Branch 2: the config is corrupt, the account file is not. The theme is gone
+# with the config it lived in, but the account file must still come through --
+# which is the whole point of retrying without the config.
+parse_with_who '{ not json' '{"oauthAccount":{"emailAddress":"a@b.c"}}'
+check "a corrupt config still parses"          "$DCC_CONFIG_BAD" "1"
+check "and the account file still comes through" "$P_EMAIL"      "a@b.c"
+check "and defaults apply with no theme"         "$DCC_P_DIR"    "blue"
+
+# Branch 4: both corrupt. The parse must still succeed rather than returning 1
+# and leaving every global unassigned.
+parse_with_who '{ not json' '{ also not json'
+check "both files corrupt still parses" "$PARSE_RC"       "0"
+check "both files corrupt reports the config" "$DCC_CONFIG_BAD" "1"
 
 finish
 ```
@@ -1110,7 +1191,7 @@ check "counters off hides the counts" "$(segt git 0)" "feature/responsive-tiers*
 DCC_SEG_GIT_COUNTERS=1
 
 DCC_SEG_GIT_MAXBRANCH=8
-check "maxBranch truncates at tier 0" "$(segt git 0)" "feature/…* ↑2 ●3 ?2"
+check "maxBranch truncates at tier 0" "$(segt git 0)" "feature…* ↑2 ●3 ?2"
 DCC_SEG_GIT_MAXBRANCH=0
 
 DCC_SEG_MODEL_SHORT=1
@@ -1198,19 +1279,77 @@ DCC_L_5H="5h"
 DCC_L_7D="7d"
 ```
 
-- [ ] **Step 5: Run the tests**
+- [ ] **Step 5: Cover the jq extraction itself**
+
+`tiers.test.sh` sets the `DCC_SEG_*` and `DCC_L_*` globals directly, so it never
+runs the jq program at all. The seven new extraction lines are therefore
+untested by it — and the three label lines nest double quotes inside a jq string
+inside a bash single-quoted string, which is the most fragile construct in
+`DCC_JQ_PROG`. A syntax error there, or a reversed empty-string guard, would
+leave the whole suite green.
+
+Append to `plugins/dcc-statusline/tests/config.test.sh`, before its `finish`:
+
+```bash
+# --- segment options -----------------------------------------------------------
+cfg="$(mktemp)"
+cat > "$cfg" <<'JSON'
+{ "segments": {
+    "dir":   { "style": "leaf" },
+    "git":   { "counters": false, "maxBranch": 14 },
+    "model": { "short": true },
+    "ctx":   { "label": "context" },
+    "5h":    { "label": "session" },
+    "7d":    { "label": "week" } } }
+JSON
+dcc_parse_all "$(cat "$F/full.json")" "$cfg" /dev/null
+check "dir style comes through"     "$DCC_SEG_DIR_STYLE"     "leaf"
+check "counters false becomes 0"    "$DCC_SEG_GIT_COUNTERS"  "0"
+check "maxBranch comes through"     "$DCC_SEG_GIT_MAXBRANCH" "14"
+check "model short true becomes 1"  "$DCC_SEG_MODEL_SHORT"   "1"
+check "the ctx label comes through" "$DCC_L_CTX"             "context"
+check "the 5h label comes through"  "$DCC_L_5H"              "session"
+check "the 7d label comes through"  "$DCC_L_7D"              "week"
+rm -f "$cfg"
+
+# The whole object is optional: absent, every prior default stands.
+dcc_parse_all "$(cat "$F/full.json")" /dev/null /dev/null
+check "no segments object leaves the dir style empty" "$DCC_SEG_DIR_STYLE"     ""
+check "no segments object keeps counters on"          "$DCC_SEG_GIT_COUNTERS"  "1"
+check "no segments object keeps maxBranch at 0"       "$DCC_SEG_GIT_MAXBRANCH" "0"
+check "no segments object keeps the model long"       "$DCC_SEG_MODEL_SHORT"   "0"
+check "no segments object keeps the ctx label"        "$DCC_L_CTX"             "ctx"
+check "no segments object keeps the 7d label"         "$DCC_L_7D"              "7d"
+
+# An empty or non-string label falls back rather than rendering a bare leading
+# space where "ctx " used to be, which would read as a rendering bug.
+cfg="$(mktemp)"
+printf '{ "segments": { "ctx": { "label": "" }, "5h": { "label": 42 } } }' > "$cfg"
+dcc_parse_all "$(cat "$F/full.json")" "$cfg" /dev/null
+check "an empty label falls back"         "$DCC_L_CTX"      "ctx"
+check "a non-string label falls back"     "$DCC_L_5H"       "5h"
+check "a bad label is not a config error" "$DCC_CONFIG_BAD" "0"
+rm -f "$cfg"
+```
+
+This moves `config.test.sh` from 91 assertions to 107.
+
+- [ ] **Step 6: Run the tests**
 
 ```bash
 bash plugins/dcc-statusline/tests/tiers.test.sh
+bash plugins/dcc-statusline/tests/config.test.sh
 bash plugins/dcc-statusline/tests/run-all.sh
 ```
 
-Expected: both `0 failed`.
+Expected: all `0 failed`, with `config.test.sh` at 107.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add plugins/dcc-statusline/scripts/ plugins/dcc-statusline/tests/tiers.test.sh
+git add plugins/dcc-statusline/scripts/ \
+        plugins/dcc-statusline/tests/tiers.test.sh \
+        plugins/dcc-statusline/tests/config.test.sh
 git commit -m "feat(statusline): add per-segment options"
 ```
 
@@ -1349,13 +1488,40 @@ and the matching pair in the unframed block:
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 ```
 
-- [ ] **Step 5: Add `time` to the documented segment list**
+- [ ] **Step 5: Add `time` to the segment-dispatch regression loop**
 
-In `plugins/dcc-statusline/tests/segments.test.sh:180`, add `time` to the name list so the "every segment tolerates absent data" loop covers it:
+In `plugins/dcc-statusline/tests/segments.test.sh`, add `time` to the name list:
 
 ```bash
 for name in dir git model effort fast time agent style account ctx cost 5h 7d; do
 ```
+
+That loop currently asserts `rc=0 text=[]` for every name, which `time` cannot
+satisfy. The property the loop actually exists to protect — stated in its own
+header comment — is that an unset `P_*` set does not abort the dispatcher.
+Emptiness is how the payload-driven segments express that; it is not the
+property. `time` has no payload input at all: it reads `DCC_NOW`, so it renders
+whether or not any `P_*` exists.
+
+Asserting a clock value instead would be worse than useless here, because this
+file does not pin `TZ` — the expectation would pass on a UTC machine and fail
+everywhere else. Assert only the return code for `time`:
+
+```bash
+  # Every segment must survive with rc=0. All but one must also render nothing:
+  # `time` has no payload input -- it reads the clock -- so it renders
+  # regardless, and asserting emptiness for it would assert something false
+  # about a segment that is working correctly. Its rendered value is not
+  # asserted here because this file does not pin TZ.
+  case "$name" in
+    time) check "unset P_* does not abort the 'time' segment" \
+            "${result%% text=*}" "rc=0" ;;
+    *)    check "unset P_* leaves the '$name' segment empty, not aborted" \
+            "$result" "rc=0 text=[]" ;;
+  esac
+```
+
+replacing the single `check` line at the foot of the loop body.
 
 - [ ] **Step 6: Run the tests**
 
@@ -1376,452 +1542,32 @@ git commit -m "feat(statusline): per-line separators and time segment"
 
 # Phase 4 — Configuration surface
 
-### Task 9: `validate.sh` and the budget boundary
+### Task 9: The schema, `validate.sh`, and the budget boundary
+
+The schema is created here rather than in Task 11 because `validate.sh` reads its
+key, segment and theme lists out of it. Keeping a second hardcoded copy of those
+lists in bash would let the two drift silently, and the only symptom would be
+`doctor` accepting a key the schema rejects, or the reverse.
+
+The schema lives under `scripts/` so `dcc_copy_scripts` carries it to
+`~/.claude/dcc-statusline/` along with everything else — `cp -R "$DCC_SRC_DIR/."`
+copies the contents of `scripts/`, so a file at the plugin root would never reach
+an installed copy, and the installed `validate.sh` would find no schema.
 
 **Files:**
+- Create: `plugins/dcc-statusline/scripts/dcc-statusline.schema.json`
 - Create: `plugins/dcc-statusline/scripts/lib/validate.sh`
 - Create: `plugins/dcc-statusline/tests/validate.test.sh`
 
 **Interfaces:**
 - Consumes: `jq` on `PATH`. Forks freely — this file is never on the render path.
-- Produces: `dcc_validate <config-path>` — prints one line per finding to stdout in the `ok   - ` / `warn - ` / `FAIL - ` format `install.sh doctor` already uses. Returns `0` when no `FAIL` line was printed, `1` otherwise. A nonexistent path is `ok` (defaults apply).
+- Produces:
+  - `dcc-statusline.schema.json` — a JSON Schema whose `properties` keys, `properties.lines.items.items.enum` and `properties.theme.enum` are read at runtime by `validate.sh`.
+  - `dcc_validate <config-path>` — prints one line per finding to stdout in the `ok   - ` / `warn - ` / `FAIL - ` format `install.sh doctor` already uses. Returns `0` when no `FAIL` line was printed, `1` otherwise. A nonexistent path is `ok` (defaults apply).
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the schema**
 
-Create `plugins/dcc-statusline/tests/validate.test.sh`:
-
-```bash
-#!/usr/bin/env bash
-# Config diagnostics, plus the assertion that keeps them off the render path.
-set -uo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/lib.sh"
-source "$HERE/../scripts/lib/validate.sh"
-
-export LC_ALL=C.UTF-8
-
-vout() { # vout <config-json> -> the findings
-  local cfg; cfg="$(mktemp)"
-  printf '%s' "$1" > "$cfg"
-  dcc_validate "$cfg"
-  rm -f "$cfg"
-}
-
-check "a valid config reports no failures" \
-  "$(vout '{ "theme": "mono" }' | grep -c '^FAIL')" "0"
-check "a missing file is not a failure" \
-  "$(dcc_validate /nonexistent/dcc.json | grep -c '^FAIL')" "0"
-check "malformed JSON is a failure" \
-  "$(vout '{ not json' | grep -c '^FAIL')" "1"
-
-check "an unknown top-level key is named" \
-  "$(vout '{ "colour": "blue" }' | grep -c 'colour')" "1"
-check "an unknown theme is named" \
-  "$(vout '{ "theme": "nonesuch" }' | grep -c 'nonesuch')" "1"
-check "an unknown segment name is named" \
-  "$(vout '{ "lines": [["dir","bogus"],[]] }' | grep -c 'bogus')" "1"
-check "an invalid colour is named" \
-  "$(vout '{ "palette": { "dir": "puce" } }' | grep -c 'puce')" "1"
-check "a 256-colour number is accepted" \
-  "$(vout '{ "palette": { "dir": "141" } }' | grep -c '^FAIL')" "0"
-check "an out-of-range colour number is rejected" \
-  "$(vout '{ "palette": { "dir": "999" } }' | grep -c '999')" "1"
-check "a wrong-typed frameMargin is named" \
-  "$(vout '{ "frameMargin": "wide" }' | grep -c 'frameMargin')" "1"
-check "an out-of-range maxTier is named" \
-  "$(vout '{ "responsive": { "maxTier": 9 } }' | grep -c 'maxTier')" "1"
-check "the \$schema key is not reported as unknown" \
-  "$(vout '{ "$schema": "./dcc-statusline.schema.json" }' | grep -c 'schema')" "0"
-
-# The budget boundary. validate.sh forks freely; the render path budgets five
-# processes. A source line here would blow that budget on every keystroke, and
-# the cost would not show up in any rendering assertion.
-check "statusline.sh does not source validate.sh" \
-  "$(grep -c 'validate\.sh' "$HERE/../scripts/statusline.sh")" "0"
-check "no render-path lib sources validate.sh" \
-  "$(grep -l 'validate\.sh' "$HERE"/../scripts/lib/*.sh | grep -vc 'validate\.sh')" "0"
-
-finish
-```
-
-- [ ] **Step 2: Run it to verify it fails**
-
-```bash
-bash plugins/dcc-statusline/tests/validate.test.sh
-```
-
-Expected: FAIL — `validate.sh` does not exist, so the `source` line aborts the file.
-
-- [ ] **Step 3: Write `validate.sh`**
-
-Create `plugins/dcc-statusline/scripts/lib/validate.sh`:
-
-```bash
-#!/usr/bin/env bash
-set -uo pipefail
-# Config diagnostics. NEVER sourced by statusline.sh -- this file forks freely,
-# and the render path budgets five processes. tests/validate.test.sh asserts the
-# boundary, because a stray source line would cost forks on every keystroke
-# without failing any rendering assertion.
-
-DCC_VALID_SEGMENTS="dir git model effort fast agent style account ctx cost 5h 7d time"
-DCC_VALID_COLORS="black red green yellow blue magenta cyan white orange gray"
-DCC_VALID_THEMES="default minimal mono vivid"
-DCC_VALID_TOPKEYS="\$schema lines separator frame frameMargin responsive icons palette meters accounts glyphs segments theme"
-
-_dcc_v_in() { # _dcc_v_in <needle> <space-separated haystack>
-  case " $2 " in *" $1 "*) return 0 ;; esac
-  return 1
-}
-
-_dcc_v_color() { # _dcc_v_color <label> <value> -> prints a FAIL line if invalid
-  local label="$1" v="$2"
-  [ -n "$v" ] || return 0
-  if _dcc_v_in "$v" "$DCC_VALID_COLORS"; then return 0; fi
-  # A bare number is a 256-colour index; anything outside 0-255 is not.
-  case "$v" in
-    ''|*[!0-9]*) printf 'FAIL - %s: "%s" is not a colour name or a 0-255 number\n' "$label" "$v"; return 1 ;;
-  esac
-  if [ "$v" -gt 255 ]; then
-    printf 'FAIL - %s: "%s" is outside the 0-255 colour range\n' "$label" "$v"
-    return 1
-  fi
-  return 0
-}
-
-dcc_validate() { # dcc_validate <config-path> -> findings on stdout, rc 1 on any FAIL
-  local cfg="${1:-}" rc=0 k v n
-
-  if [ ! -f "$cfg" ]; then
-    printf 'ok   - no config file; built-in defaults apply\n'
-    return 0
-  fi
-  if ! jq -e . "$cfg" >/dev/null 2>&1; then
-    printf 'FAIL - config is not valid JSON\n'
-    return 1
-  fi
-
-  while IFS= read -r k; do
-    [ -n "$k" ] || continue
-    _dcc_v_in "$k" "$DCC_VALID_TOPKEYS" && continue
-    printf 'warn - unknown key "%s" is ignored\n' "$k"
-  done < <(jq -r 'keys[]' "$cfg" 2>/dev/null)
-
-  v="$(jq -r '.theme // empty' "$cfg" 2>/dev/null)"
-  if [ -n "$v" ] && ! _dcc_v_in "$v" "$DCC_VALID_THEMES"; then
-    printf 'FAIL - theme: "%s" is unknown; valid themes are %s\n' "$v" "$DCC_VALID_THEMES"
-    rc=1
-  fi
-
-  while IFS= read -r v; do
-    [ -n "$v" ] || continue
-    _dcc_v_in "$v" "$DCC_VALID_SEGMENTS" && continue
-    printf 'FAIL - lines: "%s" is not a segment name; valid names are %s\n' "$v" "$DCC_VALID_SEGMENTS"
-    rc=1
-  done < <(jq -r '(.lines // []) | flatten | .[]' "$cfg" 2>/dev/null)
-
-  while IFS= read -r k; do
-    [ -n "$k" ] || continue
-    v="${k#*=}"; k="${k%%=*}"
-    _dcc_v_color "palette.$k" "$v" || rc=1
-  done < <(jq -r '(.palette // {}) | to_entries[] | select(.value|type == "string") | "\(.key)=\(.value)"' "$cfg" 2>/dev/null)
-
-  while IFS= read -r k; do
-    [ -n "$k" ] || continue
-    v="${k#*=}"; k="${k%%=*}"
-    _dcc_v_color "palette.effortLevels.$k" "$v" || rc=1
-  done < <(jq -r '(.palette.effortLevels // {}) | to_entries[] | "\(.key)=\(.value)"' "$cfg" 2>/dev/null)
-
-  n="$(jq -r 'if has("frameMargin") and (.frameMargin|type) != "number" then "bad" else "" end' "$cfg" 2>/dev/null)"
-  if [ "$n" = "bad" ]; then
-    printf 'FAIL - frameMargin: must be a number of cells, e.g. 4\n'
-    rc=1
-  fi
-
-  n="$(jq -r '.responsive.maxTier // empty' "$cfg" 2>/dev/null)"
-  if [ -n "$n" ]; then
-    case "$n" in
-      0|1|2|3) : ;;
-      *) printf 'FAIL - responsive.maxTier: "%s" is outside 0-3\n' "$n"; rc=1 ;;
-    esac
-  fi
-
-  [ "$rc" -eq 0 ] && printf 'ok   - config validates\n'
-  return "$rc"
-}
-```
-
-- [ ] **Step 4: Run the test**
-
-```bash
-bash plugins/dcc-statusline/tests/validate.test.sh
-bash plugins/dcc-statusline/tests/run-all.sh
-```
-
-Expected: both `0 failed`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add plugins/dcc-statusline/scripts/lib/validate.sh \
-        plugins/dcc-statusline/tests/validate.test.sh
-git commit -m "feat(statusline): add config validation off render path"
-```
-
----
-
-### Task 10: `preview.sh`
-
-**Files:**
-- Create: `plugins/dcc-statusline/scripts/preview.sh`
-- Create: `plugins/dcc-statusline/tests/preview.test.sh`
-
-**Interfaces:**
-- Consumes: `scripts/statusline.sh` invoked as a subprocess with `COLUMNS` set per block.
-- Produces: an executable script accepting `--width N`, `--theme NAME`, `--config PATH`, `--help`. Exit `0` on success, `2` on an unknown flag.
-
-- [ ] **Step 1: Write the failing test**
-
-Create `plugins/dcc-statusline/tests/preview.test.sh`:
-
-```bash
-#!/usr/bin/env bash
-# The preview renders the real config at several widths. It is not on the render
-# path, so it may fork freely.
-set -uo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/lib.sh"
-PREVIEW="$HERE/../scripts/preview.sh"
-
-export LC_ALL=C.UTF-8
-export DCC_NOW=1785886800
-
-out="$(bash "$PREVIEW" --config /dev/null 2>&1)"
-check "the default preview shows five widths" \
-  "$(printf '%s\n' "$out" | grep -c '^── COLUMNS ')" "5"
-check "the preview reports the tier each line chose" \
-  "$(printf '%s\n' "$out" | grep -c 'tier ')" "5"
-check "the preview renders the probe model" \
-  "$(printf '%s' "$out" | strip_ansi | grep -c 'Opus')" "1"
-
-out="$(bash "$PREVIEW" --config /dev/null --width 100 2>&1)"
-check "--width renders exactly one block" \
-  "$(printf '%s\n' "$out" | grep -c '^── COLUMNS ')" "1"
-check "--width names the width it was given" \
-  "$(printf '%s\n' "$out" | grep -c '^── COLUMNS 100')" "1"
-
-out="$(bash "$PREVIEW" --config /dev/null --theme minimal --width 100 2>&1)"
-check "--theme minimal drops the frame" \
-  "$(printf '%s' "$out" | grep -c '╭')" "0"
-
-bash "$PREVIEW" --config /dev/null --nonsense >/dev/null 2>&1; rc=$?
-check "an unknown flag exits 2" "$rc" "2"
-
-bash "$PREVIEW" --help >/dev/null 2>&1; rc=$?
-check "--help exits 0" "$rc" "0"
-
-finish
-```
-
-- [ ] **Step 2: Run it to verify it fails**
-
-```bash
-bash plugins/dcc-statusline/tests/preview.test.sh
-```
-
-Expected: FAIL — `preview.sh` does not exist.
-
-- [ ] **Step 3: Write `preview.sh`**
-
-Create `plugins/dcc-statusline/scripts/preview.sh`:
-
-```bash
-#!/usr/bin/env bash
-# Renders the real config at several widths so the responsive tiers can be seen
-# before they are trusted.
-#
-# A separate script rather than a flag on statusline.sh: statusline.sh reads a
-# payload on stdin and must stay free of argument parsing on the render path.
-# This file is not on that path and forks freely.
-set -uo pipefail
-
-DCC_SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DCC_WIDTHS="48 60 80 120 200"
-DCC_CFG=""
-DCC_THEME=""
-
-_dcc_usage() {
-  cat <<'TXT'
-usage: preview.sh [--width N] [--theme NAME] [--config PATH]
-
-  --width N      render one width only, instead of 48 60 80 120 200
-  --theme NAME   render with this theme, without editing the config
-  --config PATH  render this config file instead of the installed one
-TXT
-}
-
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --width)  DCC_WIDTHS="${2:-}"; shift 2 ;;
-    --theme)  DCC_THEME="${2:-}";  shift 2 ;;
-    --config) DCC_CFG="${2:-}";    shift 2 ;;
-    --help|-h) _dcc_usage; exit 0 ;;
-    *) printf 'preview.sh: unknown option %s\n' "$1" >&2; _dcc_usage >&2; exit 2 ;;
-  esac
-done
-
-[ -n "$DCC_CFG" ] || DCC_CFG="${DCC_STATUSLINE_CONFIG:-$HOME/.claude/dcc-statusline.json}"
-[ -f "$DCC_CFG" ] || DCC_CFG=/dev/null
-
-# A theme override is applied by merging it over the chosen config into a temp
-# file, so the user's own file is never touched.
-if [ -n "$DCC_THEME" ]; then
-  tmp="$(mktemp)"
-  jq --arg t "$DCC_THEME" '. + {theme: $t}' "$DCC_CFG" > "$tmp" 2>/dev/null
-  # Tested with -s rather than on jq's exit status: jq run against /dev/null (or
-  # any empty file) reads no JSON value, writes nothing, and still exits 0, so an
-  # exit-status check would leave an empty config here and silently lose the theme.
-  [ -s "$tmp" ] || printf '{"theme":"%s"}' "$DCC_THEME" > "$tmp"
-  DCC_CFG="$tmp"
-fi
-
-# A representative session: inside a repository, mid-context, with both rate
-# limit windows populated. Frozen relative to DCC_NOW so the countdowns are
-# stable across runs.
-now="${DCC_NOW:-$(date +%s)}"
-payload="$(cat <<JSON
-{
-  "workspace": { "current_dir": "$PWD" },
-  "model": { "display_name": "Opus 4.8" },
-  "effort": { "level": "xhigh" },
-  "cost": { "total_cost_usd": 1.2 },
-  "context_window": { "used_percentage": 47, "total_input_tokens": 94210 },
-  "rate_limits": {
-    "five_hour":  { "used_percentage": 23, "resets_at": $(( now + 13200 )) },
-    "seven_day":  { "used_percentage": 41, "resets_at": $(( now + 500000 )) }
-  }
-}
-JSON
-)"
-
-for w in $DCC_WIDTHS; do
-  case "$w" in ''|*[!0-9]*) printf 'preview.sh: "%s" is not a width\n' "$w" >&2; exit 2 ;; esac
-  # DCC_PREVIEW_TIERS makes statusline.sh report the tier each line settled on.
-  tiers="$(printf '%s' "$payload" \
-    | COLUMNS="$w" DCC_STATUSLINE_CONFIG="$DCC_CFG" DCC_NOW="$now" \
-      DCC_PREVIEW_TIERS=1 bash "$DCC_SRC_DIR/statusline.sh" 2>/dev/null \
-    | sed -n 's/^DCC_TIERS //p')"
-  printf '\n── COLUMNS %s ── tier %s ──\n' "$w" "${tiers:-0/0}"
-  printf '%s' "$payload" \
-    | COLUMNS="$w" DCC_STATUSLINE_CONFIG="$DCC_CFG" DCC_NOW="$now" \
-      bash "$DCC_SRC_DIR/statusline.sh" 2>/dev/null
-done
-printf '\n'
-
-[ -n "$DCC_THEME" ] && rm -f "$DCC_CFG"
-exit 0
-```
-
-- [ ] **Step 4: Emit the tier report from `statusline.sh`**
-
-`preview.sh` reads a `DCC_TIERS` line that `statusline.sh` only prints when asked. In `plugins/dcc-statusline/scripts/statusline.sh`, add immediately before each of the two `return 0` points of `dcc_main` (the end of the framed block and the end of the unframed block):
-
-```bash
-  [ -n "${DCC_PREVIEW_TIERS:-}" ] && printf 'DCC_TIERS %s/%s\n' "$DCC_TIER1" "$DCC_LINE_TIER"
-```
-
-and capture line one's tier immediately after its `dcc_line_fit` call in both blocks:
-
-```bash
-    DCC_TIER1="$DCC_LINE_TIER"
-```
-
-Declare it beside the other locals at the top of `dcc_main`:
-
-```bash
-  local names1 names2 DCC_TIER1=0
-```
-
-This costs one `[ -n ... ]` test per render when the variable is unset, and no fork.
-
-- [ ] **Step 5: Run the tests**
-
-```bash
-bash plugins/dcc-statusline/tests/preview.test.sh
-bash plugins/dcc-statusline/tests/run-all.sh
-```
-
-Expected: both `0 failed`.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add plugins/dcc-statusline/scripts/preview.sh \
-        plugins/dcc-statusline/scripts/statusline.sh \
-        plugins/dcc-statusline/tests/preview.test.sh
-git commit -m "feat(statusline): add multi-width preview"
-```
-
----
-
-### Task 11: JSON Schema and `doctor` integration
-
-**Files:**
-- Create: `plugins/dcc-statusline/dcc-statusline.schema.json`
-- Modify: `plugins/dcc-statusline/scripts/install.sh:73-85` (`dcc_seed_config`), `:124-132` (`dcc_doctor`)
-- Modify: `plugins/dcc-statusline/tests/install.test.sh` (append)
-
-**Interfaces:**
-- Consumes: `dcc_validate` from Task 9.
-- Produces: a schema file, and a `dcc_seed_config` that writes `"$schema"` into a newly created config.
-
-- [ ] **Step 1: Write the failing test**
-
-Append to `plugins/dcc-statusline/tests/install.test.sh`, immediately before its `finish` line:
-
-```bash
-# --- schema and validation ----------------------------------------------------
-SCHEMA="$HERE/../dcc-statusline.schema.json"
-check "the schema file exists" "$([ -f "$SCHEMA" ] && echo yes || echo no)" "yes"
-check "the schema is valid JSON" \
-  "$(jq -e . "$SCHEMA" >/dev/null 2>&1 && echo yes || echo no)" "yes"
-check "the schema declares every top-level key" \
-  "$(jq -r '.properties | keys | length' "$SCHEMA")" "13"
-
-# A seeded config points at the schema so editors validate while typing.
-seedhome="$(mktemp -d)"
-mkdir -p "$seedhome/.claude"
-DCC_FAKE_HOME="$seedhome" dcc_seed_config
-check "a seeded config declares \$schema" \
-  "$(jq -r '."$schema" // empty' "$seedhome/.claude/dcc-statusline.json" | grep -c 'dcc-statusline.schema.json')" "1"
-check "a seeded config still has an accounts map" \
-  "$(jq -r '.accounts | type' "$seedhome/.claude/dcc-statusline.json")" "object"
-check "a seeded config validates" \
-  "$(dcc_validate "$seedhome/.claude/dcc-statusline.json" | grep -c '^FAIL')" "0"
-rm -rf "$seedhome"
-
-# doctor names the offending key rather than only reporting that parsing failed.
-dochome="$(mktemp -d)"
-mkdir -p "$dochome/.claude"
-printf '{ "theme": "nonesuch" }' > "$dochome/.claude/dcc-statusline.json"
-out="$(DCC_FAKE_HOME="$dochome" dcc_doctor 2>&1)"
-check "doctor names an unknown theme" "$(printf '%s' "$out" | grep -c 'nonesuch')" "1"
-rm -rf "$dochome"
-```
-
-`install.test.sh` sources `install.sh`, which after this task sources `validate.sh`, so `dcc_validate` is in scope.
-
-- [ ] **Step 2: Run it to verify it fails**
-
-```bash
-bash plugins/dcc-statusline/tests/install.test.sh
-```
-
-Expected: FAIL — the schema file does not exist and `dcc_seed_config` writes no `$schema`.
-
-- [ ] **Step 3: Write the schema**
-
-Create `plugins/dcc-statusline/dcc-statusline.schema.json`:
+Create `plugins/dcc-statusline/scripts/dcc-statusline.schema.json` with exactly this content:
 
 ```json
 {
@@ -1983,9 +1729,628 @@ Create `plugins/dcc-statusline/dcc-statusline.schema.json`:
 }
 ```
 
-The `properties` object has exactly 13 keys — `$schema`, `theme`, `lines`, `separator`, `frame`, `frameMargin`, `responsive`, `icons`, `palette`, `meters`, `accounts`, `glyphs`, `segments` — matching both the test and `DCC_VALID_TOPKEYS` in `validate.sh`. The two lists must stay in step; the schema is what editors read, `DCC_VALID_TOPKEYS` is what `doctor` reads.
+Three parts of it are read at runtime by `validate.sh` and are therefore load-bearing, not merely documentation:
 
-- [ ] **Step 4: Seed `$schema` and wire `doctor`**
+| Schema path | Supplies |
+|-------------|----------|
+| `.properties \| keys` | The 13 valid top-level key names |
+| `.properties.lines.items.items.enum` | The 13 valid segment names |
+| `.properties.theme.enum` | The 4 valid theme names |
+
+- [ ] **Step 2: Write the failing test**
+
+Create `plugins/dcc-statusline/tests/validate.test.sh`:
+
+```bash
+#!/usr/bin/env bash
+# Config diagnostics, plus the assertion that keeps them off the render path.
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/lib.sh"
+source "$HERE/../scripts/lib/validate.sh"
+
+export LC_ALL=C.UTF-8
+
+vout() { # vout <config-json> -> the findings
+  local cfg; cfg="$(mktemp)"
+  printf '%s' "$1" > "$cfg"
+  dcc_validate "$cfg"
+  rm -f "$cfg"
+}
+
+check "a valid config reports no failures" \
+  "$(vout '{ "theme": "mono" }' | grep -c '^FAIL')" "0"
+check "a missing file is not a failure" \
+  "$(dcc_validate /nonexistent/dcc.json | grep -c '^FAIL')" "0"
+check "malformed JSON is a failure" \
+  "$(vout '{ not json' | grep -c '^FAIL')" "1"
+
+check "an unknown top-level key is named" \
+  "$(vout '{ "colour": "blue" }' | grep -c 'colour')" "1"
+check "an unknown theme is named" \
+  "$(vout '{ "theme": "nonesuch" }' | grep -c 'nonesuch')" "1"
+check "an unknown segment name is named" \
+  "$(vout '{ "lines": [["dir","bogus"],[]] }' | grep -c 'bogus')" "1"
+check "an invalid colour is named" \
+  "$(vout '{ "palette": { "dir": "puce" } }' | grep -c 'puce')" "1"
+check "a 256-colour number is accepted" \
+  "$(vout '{ "palette": { "dir": "141" } }' | grep -c '^FAIL')" "0"
+check "an out-of-range colour number is rejected" \
+  "$(vout '{ "palette": { "dir": "999" } }' | grep -c '999')" "1"
+check "a wrong-typed frameMargin is named" \
+  "$(vout '{ "frameMargin": "wide" }' | grep -c 'frameMargin')" "1"
+check "an out-of-range maxTier is named" \
+  "$(vout '{ "responsive": { "maxTier": 9 } }' | grep -c 'maxTier')" "1"
+check "the \$schema key is not reported as unknown" \
+  "$(vout '{ "$schema": "./dcc-statusline.schema.json" }' | grep -c 'schema')" "0"
+
+# The valid-name lists come from the schema, not from a second copy in bash.
+# These assert the wiring, so a schema edit that widens or narrows a list is
+# picked up by doctor without anyone remembering to update a parallel constant.
+_dcc_v_load_schema
+check "top-level keys are read from the schema" \
+  "$(printf '%s' "$DCC_VALID_TOPKEYS" | wc -w | tr -d ' ')" "13"
+check "segment names are read from the schema" \
+  "$(printf '%s' "$DCC_VALID_SEGMENTS" | wc -w | tr -d ' ')" "13"
+check "theme names are read from the schema" \
+  "$(printf '%s' "$DCC_VALID_THEMES" | wc -w | tr -d ' ')" "4"
+check "the schema list includes the time segment" \
+  "$(printf '%s' "$DCC_VALID_SEGMENTS" | grep -c 'time')" "1"
+
+# Membership, not counting, and deliberately on the LAST entry of each list.
+# A stray CR from a CRLF jq lands on exactly that entry, and every count-based
+# assertion above stays green with it: wc -w counts "theme\r" as one word and
+# grep -c 'time' matches "time\r". Only the glob _dcc_v_in actually performs
+# can tell the difference, so these use it directly.
+r=no; _dcc_v_in "theme" "$DCC_VALID_TOPKEYS"  && r=yes
+check "the last top-level key matches exactly" "$r" "yes"
+r=no; _dcc_v_in "time"  "$DCC_VALID_SEGMENTS" && r=yes
+check "the last segment name matches exactly"  "$r" "yes"
+r=no; _dcc_v_in "vivid" "$DCC_VALID_THEMES"   && r=yes
+check "the last theme name matches exactly"    "$r" "yes"
+
+# An unreadable schema must degrade to a warning, not take doctor down with it.
+DCC_SCHEMA_PATH=/nonexistent/schema.json
+check "a missing schema warns rather than failing" \
+  "$(vout '{ "theme": "mono" }' | grep -c '^warn')" "1"
+check "a missing schema is not a FAIL" \
+  "$(vout '{ "theme": "mono" }' | grep -c '^FAIL')" "0"
+DCC_SCHEMA_PATH="$HERE/../scripts/dcc-statusline.schema.json"
+
+# The budget boundary. validate.sh forks freely; the render path budgets five
+# processes. A source line here would blow that budget on every keystroke, and
+# the cost would not show up in any rendering assertion.
+check "statusline.sh does not source validate.sh" \
+  "$(grep -c 'validate\.sh' "$HERE/../scripts/statusline.sh")" "0"
+check "no render-path lib sources validate.sh" \
+  "$(grep -l 'validate\.sh' "$HERE"/../scripts/lib/*.sh | grep -vc 'validate\.sh')" "0"
+
+# The two greps above search for a literal filename, so a future refactor that
+# sourced lib/*.sh in a loop would pull validate.sh onto the render path with
+# the string "validate.sh" appearing nowhere, and both would still pass. Ask
+# the loaded script itself instead. Sourcing is safe: statusline.sh guards its
+# entry point on BASH_SOURCE[0] = $0, which does not hold when sourced.
+have="$(DCC_T="$HERE/../scripts/statusline.sh" bash -c \
+  'source "$DCC_T" >/dev/null 2>&1; declare -F dcc_validate >/dev/null && echo yes || echo no')"
+check "loading statusline.sh does not define dcc_validate" "$have" "no"
+
+finish
+```
+
+- [ ] **Step 3: Run it to verify it fails**
+
+```bash
+bash plugins/dcc-statusline/tests/validate.test.sh
+```
+
+Expected: FAIL — `validate.sh` does not exist, so the `source` line aborts the file.
+
+- [ ] **Step 4: Write `validate.sh`**
+
+Create `plugins/dcc-statusline/scripts/lib/validate.sh`:
+
+```bash
+#!/usr/bin/env bash
+set -uo pipefail
+# Config diagnostics. NEVER sourced by statusline.sh -- this file forks freely,
+# and the render path budgets five processes. tests/validate.test.sh asserts the
+# boundary, because a stray source line would cost forks on every keystroke
+# without failing any rendering assertion.
+
+# The schema is the single source of truth for which keys, segments and themes
+# exist. A second copy of those lists in bash would drift, and the only symptom
+# would be doctor accepting a key the schema rejects, or the reverse.
+#
+# It sits under scripts/ rather than the plugin root because dcc_copy_scripts
+# copies the contents of scripts/ to ~/.claude/dcc-statusline/; a file at the
+# plugin root would never reach an installed copy.
+DCC_SCHEMA_PATH="${BASH_SOURCE[0]%/*}/../dcc-statusline.schema.json"
+
+# Colours are not in the schema as a list -- it constrains them with a regex, so
+# there is nothing to read back. This stays a bash constant by necessity.
+DCC_VALID_COLORS="black red green yellow blue magenta cyan white orange gray"
+
+DCC_VALID_TOPKEYS=""
+DCC_VALID_SEGMENTS=""
+DCC_VALID_THEMES=""
+
+_dcc_v_load_schema() { # -> DCC_VALID_TOPKEYS, _SEGMENTS, _THEMES; rc 1 if unreadable
+  local out
+  DCC_VALID_TOPKEYS=""; DCC_VALID_SEGMENTS=""; DCC_VALID_THEMES=""
+  [ -r "$DCC_SCHEMA_PATH" ] || return 1
+  out="$(jq -r '
+    (.properties | keys | join(" ")),
+    ((.properties.lines.items.items.enum // []) | join(" ")),
+    ((.properties.theme.enum // []) | join(" "))
+  ' "$DCC_SCHEMA_PATH" 2>/dev/null)" || return 1
+  # Native Windows jq emits CRLF. Command substitution strips the trailing
+  # newlines but not the CR ahead of each one, so without this every list ends
+  # in a stray CR and _dcc_v_in stops matching its LAST entry -- doctor would
+  # then call the `theme` key unknown and reject a valid `time` segment or
+  # `vivid` theme. Stripping here rather than relying on sed to normalise:
+  # MSYS2's sed happens to, but that is not a property to depend on.
+  out="${out//$'\r'/}"
+  DCC_VALID_TOPKEYS="$(printf '%s\n' "$out" | sed -n 1p)"
+  DCC_VALID_SEGMENTS="$(printf '%s\n' "$out" | sed -n 2p)"
+  DCC_VALID_THEMES="$(printf '%s\n' "$out" | sed -n 3p)"
+  [ -n "$DCC_VALID_TOPKEYS" ]
+}
+
+_dcc_v_in() { # _dcc_v_in <needle> <space-separated haystack>
+  case " $2 " in *" $1 "*) return 0 ;; esac
+  return 1
+}
+
+_dcc_v_color() { # _dcc_v_color <label> <value> -> prints a FAIL line if invalid
+  local label="$1" v="$2"
+  [ -n "$v" ] || return 0
+  if _dcc_v_in "$v" "$DCC_VALID_COLORS"; then return 0; fi
+  # A bare number is a 256-colour index; anything outside 0-255 is not.
+  case "$v" in
+    ''|*[!0-9]*) printf 'FAIL - %s: "%s" is not a colour name or a 0-255 number\n' "$label" "$v"; return 1 ;;
+  esac
+  if [ "$v" -gt 255 ]; then
+    printf 'FAIL - %s: "%s" is outside the 0-255 colour range\n' "$label" "$v"
+    return 1
+  fi
+  return 0
+}
+
+dcc_validate() { # dcc_validate <config-path> -> findings on stdout, rc 1 on any FAIL
+  local cfg="${1:-}" rc=0 k v n
+
+  if [ ! -f "$cfg" ]; then
+    printf 'ok   - no config file; built-in defaults apply\n'
+    return 0
+  fi
+  if ! jq -e . "$cfg" >/dev/null 2>&1; then
+    printf 'FAIL - config is not valid JSON\n'
+    return 1
+  fi
+
+  # Without a readable schema the name checks are skipped, not guessed. A
+  # warning says so; downgrading to a stale hardcoded list would report
+  # confident nonsense about which keys are valid.
+  if _dcc_v_load_schema; then
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      _dcc_v_in "$k" "$DCC_VALID_TOPKEYS" && continue
+      printf 'warn - unknown key "%s" is ignored\n' "$k"
+    done < <(jq -r 'keys[]' "$cfg" 2>/dev/null)
+
+    v="$(jq -r '.theme // empty' "$cfg" 2>/dev/null)"
+    if [ -n "$v" ] && ! _dcc_v_in "$v" "$DCC_VALID_THEMES"; then
+      printf 'FAIL - theme: "%s" is unknown; valid themes are %s\n' "$v" "$DCC_VALID_THEMES"
+      rc=1
+    fi
+
+    while IFS= read -r v; do
+      [ -n "$v" ] || continue
+      _dcc_v_in "$v" "$DCC_VALID_SEGMENTS" && continue
+      printf 'FAIL - lines: "%s" is not a segment name; valid names are %s\n' "$v" "$DCC_VALID_SEGMENTS"
+      rc=1
+    done < <(jq -r '(.lines // []) | flatten | .[]' "$cfg" 2>/dev/null)
+  else
+    printf 'warn - schema unreadable at %s; key, segment and theme names unchecked\n' "$DCC_SCHEMA_PATH"
+  fi
+
+  while IFS= read -r k; do
+    [ -n "$k" ] || continue
+    v="${k#*=}"; k="${k%%=*}"
+    _dcc_v_color "palette.$k" "$v" || rc=1
+  done < <(jq -r '(.palette // {}) | to_entries[] | select(.value|type == "string") | "\(.key)=\(.value)"' "$cfg" 2>/dev/null)
+
+  while IFS= read -r k; do
+    [ -n "$k" ] || continue
+    v="${k#*=}"; k="${k%%=*}"
+    _dcc_v_color "palette.effortLevels.$k" "$v" || rc=1
+  done < <(jq -r '(.palette.effortLevels // {}) | to_entries[] | "\(.key)=\(.value)"' "$cfg" 2>/dev/null)
+
+  n="$(jq -r 'if has("frameMargin") and (.frameMargin|type) != "number" then "bad" else "" end' "$cfg" 2>/dev/null)"
+  if [ "$n" = "bad" ]; then
+    printf 'FAIL - frameMargin: must be a number of cells, e.g. 4\n'
+    rc=1
+  fi
+
+  n="$(jq -r '.responsive.maxTier // empty' "$cfg" 2>/dev/null)"
+  if [ -n "$n" ]; then
+    case "$n" in
+      0|1|2|3) : ;;
+      *) printf 'FAIL - responsive.maxTier: "%s" is outside 0-3\n' "$n"; rc=1 ;;
+    esac
+  fi
+
+  [ "$rc" -eq 0 ] && printf 'ok   - config validates\n'
+  return "$rc"
+}
+```
+
+- [ ] **Step 5: Run the test**
+
+```bash
+bash plugins/dcc-statusline/tests/validate.test.sh
+bash plugins/dcc-statusline/tests/run-all.sh
+```
+
+Expected: both `0 failed`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add plugins/dcc-statusline/scripts/dcc-statusline.schema.json \
+        plugins/dcc-statusline/scripts/lib/validate.sh \
+        plugins/dcc-statusline/tests/validate.test.sh
+git commit -m "feat(statusline): add config schema and validation"
+```
+
+---
+
+### Task 10: `preview.sh`
+
+**Files:**
+- Create: `plugins/dcc-statusline/scripts/preview.sh`
+- Create: `plugins/dcc-statusline/tests/preview.test.sh`
+
+**Interfaces:**
+- Consumes: `scripts/statusline.sh` invoked as a subprocess with `COLUMNS` set per block.
+- Produces: an executable script accepting `--width N`, `--theme NAME`, `--config PATH`, `--help`. Exit `0` on success, `2` on an unknown flag.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `plugins/dcc-statusline/tests/preview.test.sh`:
+
+```bash
+#!/usr/bin/env bash
+# The preview renders the real config at several widths. It is not on the render
+# path, so it may fork freely.
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/lib.sh"
+PREVIEW="$HERE/../scripts/preview.sh"
+
+export LC_ALL=C.UTF-8
+export DCC_NOW=1785886800
+
+out="$(bash "$PREVIEW" --config /dev/null 2>&1)"
+check "the default preview shows five widths" \
+  "$(printf '%s\n' "$out" | grep -c '^── COLUMNS ')" "5"
+# Four report a tier; COLUMNS=48 is below the framing threshold, so it reports
+# unframed instead -- there is no width budget there and the tier is always 0.
+check "the preview reports the tier where a frame exists" \
+  "$(printf '%s\n' "$out" | grep -c 'tier ')" "4"
+check "the preview names the unframed width" \
+  "$(printf '%s\n' "$out" | grep -c 'unframed')" "1"
+# grep -c counts matching LINES, and the model appears on one line of every
+# block, so this is five and not one.
+check "the preview renders the probe model at every width" \
+  "$(printf '%s' "$out" | strip_ansi | grep -c 'Opus')" "5"
+
+out="$(bash "$PREVIEW" --config /dev/null --width 100 2>&1)"
+check "--width renders exactly one block" \
+  "$(printf '%s\n' "$out" | grep -c '^── COLUMNS ')" "1"
+check "--width names the width it was given" \
+  "$(printf '%s\n' "$out" | grep -c '^── COLUMNS 100')" "1"
+
+out="$(bash "$PREVIEW" --config /dev/null --theme minimal --width 100 2>&1)"
+check "--theme minimal drops the frame" \
+  "$(printf '%s' "$out" | grep -c '╭')" "0"
+
+bash "$PREVIEW" --config /dev/null --nonsense >/dev/null 2>&1; rc=$?
+check "an unknown flag exits 2" "$rc" "2"
+
+bash "$PREVIEW" --help >/dev/null 2>&1; rc=$?
+check "--help exits 0" "$rc" "0"
+
+# A trailing flag must error rather than spin: `shift 2` with one argument left
+# returns 1 and shifts nothing, so the parse loop would never terminate. Run
+# under timeout so a regression fails the suite instead of hanging it.
+timeout 5 bash "$PREVIEW" --config /dev/null --width >/dev/null 2>&1; rc=$?
+check "a trailing --width exits 2 rather than hanging" "$rc" "2"
+timeout 5 bash "$PREVIEW" --theme >/dev/null 2>&1; rc=$?
+check "a trailing --theme exits 2 rather than hanging" "$rc" "2"
+
+# A path the user typed must fail loudly; a preview of built-in defaults would
+# look like a successful preview of a config that was never read.
+bash "$PREVIEW" --config /no/such/file.json >/dev/null 2>&1; rc=$?
+check "a missing explicit config exits 2" "$rc" "2"
+
+# But an explicit /dev/null is legitimate -- it is how the tests ask for the
+# built-in defaults, and -e accepts it where -f would not.
+bash "$PREVIEW" --config /dev/null --width 100 >/dev/null 2>&1; rc=$?
+check "an explicit /dev/null config is accepted" "$rc" "0"
+
+# A config that exists but does not parse warns on stderr and still renders.
+badcfg="$(mktemp)"; printf '{ not json' > "$badcfg"
+out2="$(bash "$PREVIEW" --config "$badcfg" --width 100 2>&1)"; rc=$?
+check "a malformed config still exits 0" "$rc" "0"
+check "a malformed config says so" \
+  "$(printf '%s' "$out2" | grep -c 'not valid JSON')" "1"
+rm -f "$badcfg"
+
+finish
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+bash plugins/dcc-statusline/tests/preview.test.sh
+```
+
+Expected: FAIL — `preview.sh` does not exist.
+
+- [ ] **Step 3: Write `preview.sh`**
+
+Create `plugins/dcc-statusline/scripts/preview.sh`:
+
+```bash
+#!/usr/bin/env bash
+# Renders the real config at several widths so the responsive tiers can be seen
+# before they are trusted.
+#
+# A separate script rather than a flag on statusline.sh: statusline.sh reads a
+# payload on stdin and must stay free of argument parsing on the render path.
+# This file is not on that path and forks freely.
+set -uo pipefail
+
+DCC_SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DCC_WIDTHS="48 60 80 120 200"
+DCC_CFG=""
+DCC_THEME=""
+
+_dcc_usage() {
+  cat <<'TXT'
+usage: preview.sh [--width N] [--theme NAME] [--config PATH]
+
+  --width N      render one width only, instead of 48 60 80 120 200
+  --theme NAME   render with this theme, without editing the config
+  --config PATH  render this config file instead of the installed one
+TXT
+}
+
+DCC_CFG_GIVEN=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --width|--theme|--config)
+      # `shift 2` with a single argument remaining returns 1 and shifts
+      # nothing, so $# never decreases and this loop spins at full CPU with no
+      # output. A trailing flag is an ordinary typo; it must not lock the
+      # user's terminal.
+      [ $# -ge 2 ] || { printf 'preview.sh: %s needs a value\n' "$1" >&2; exit 2; }
+      case "$1" in
+        --width)  DCC_WIDTHS="$2" ;;
+        --theme)  DCC_THEME="$2"  ;;
+        --config) DCC_CFG="$2"; DCC_CFG_GIVEN=1 ;;
+      esac
+      shift 2
+      ;;
+    --help|-h) _dcc_usage; exit 0 ;;
+    *) printf 'preview.sh: unknown option %s\n' "$1" >&2; _dcc_usage >&2; exit 2 ;;
+  esac
+done
+
+if [ "$DCC_CFG_GIVEN" -eq 1 ]; then
+  # A path the user typed is not the same as a path that merely defaults.
+  # Falling back to defaults here would render a full preview and exit 0 for a
+  # typo, which reads as a successful preview of a config that was never read.
+  # Tested with -e rather than -f so an explicit /dev/null stays legitimate.
+  [ -e "$DCC_CFG" ] || { printf 'preview.sh: no such config: %s\n' "$DCC_CFG" >&2; exit 2; }
+else
+  DCC_CFG="${DCC_STATUSLINE_CONFIG:-$HOME/.claude/dcc-statusline.json}"
+  [ -f "$DCC_CFG" ] || DCC_CFG=/dev/null
+fi
+
+# A config that exists but does not parse would otherwise render as built-in
+# defaults with nothing said about it -- the same silent-success failure as a
+# mistyped path, reached a different way. This is a diagnostic tool; say so.
+if [ "$DCC_CFG" != /dev/null ] && ! jq -e . "$DCC_CFG" >/dev/null 2>&1; then
+  printf 'preview.sh: %s is not valid JSON; previewing built-in defaults\n' "$DCC_CFG" >&2
+  DCC_CFG=/dev/null
+fi
+
+# A theme override is applied by merging it over the chosen config into a temp
+# file, so the user's own file is never touched.
+if [ -n "$DCC_THEME" ]; then
+  tmp="$(mktemp)"
+  # The trap goes in before anything can fail, so the bad-width exit below and
+  # the normal exit both clean up.
+  trap 'rm -f "$tmp"' EXIT
+  jq --arg t "$DCC_THEME" '. + {theme: $t}' "$DCC_CFG" > "$tmp" 2>/dev/null
+  # Tested with -s rather than on jq's exit status: jq run against /dev/null (or
+  # any empty file) reads no JSON value, writes nothing, and still exits 0, so an
+  # exit-status check would leave an empty config here and silently lose the theme.
+  # jq -n --arg builds the fallback rather than printf, which would emit invalid
+  # JSON for a theme name containing a quote or a backslash.
+  [ -s "$tmp" ] || jq -n --arg t "$DCC_THEME" '{theme: $t}' > "$tmp"
+  DCC_CFG="$tmp"
+fi
+
+# A representative session: inside a repository, mid-context, with both rate
+# limit windows populated. Frozen relative to DCC_NOW so the countdowns are
+# stable across runs.
+now="${DCC_NOW:-$(date +%s)}"
+payload="$(cat <<JSON
+{
+  "workspace": { "current_dir": "$PWD" },
+  "model": { "display_name": "Opus 4.8" },
+  "effort": { "level": "xhigh" },
+  "cost": { "total_cost_usd": 1.2 },
+  "context_window": { "used_percentage": 47, "total_input_tokens": 94210 },
+  "rate_limits": {
+    "five_hour":  { "used_percentage": 23, "resets_at": $(( now + 13200 )) },
+    "seven_day":  { "used_percentage": 41, "resets_at": $(( now + 500000 )) }
+  }
+}
+JSON
+)"
+
+printf -v RULE '\342\224\200\342\224\200'   # U+2500 twice; ASCII source only
+
+for w in $DCC_WIDTHS; do
+  case "$w" in ''|*[!0-9]*) printf 'preview.sh: "%s" is not a width\n' "$w" >&2; exit 2 ;; esac
+  # One render per width, not two. DCC_PREVIEW_TIERS appends a machine-readable
+  # DCC_TIERS line; it is split off here rather than earned with a second
+  # subprocess render of the same thing.
+  out="$(printf '%s' "$payload" \
+    | COLUMNS="$w" DCC_STATUSLINE_CONFIG="$DCC_CFG" DCC_NOW="$now" \
+      DCC_PREVIEW_TIERS=1 bash "$DCC_SRC_DIR/statusline.sh" 2>/dev/null)"
+  tiers="$(printf '%s\n' "$out" | sed -n 's/^DCC_TIERS //p')"
+  body="$(printf '%s\n' "$out" | sed '/^DCC_TIERS /d')"
+
+  # Below DCC_FRAME_MIN + frameMargin the frame is off, and with no frame there
+  # is no width budget -- so dcc_line_fit never escalates and the tier is always
+  # 0. Printing "tier 0/0" there next to a genuine "tier 3/2" at a wider setting
+  # reads as though the narrow terminal were the roomier one. Say unframed
+  # instead: that, not the tier, is what changed.
+  if [ "$(printf '%s\n' "$body" | grep -c '')" -ge 4 ]; then
+    printf '\n%s COLUMNS %s %s tier %s %s\n' "$RULE" "$w" "$RULE" "${tiers:-0/0}" "$RULE"
+  else
+    printf '\n%s COLUMNS %s %s unframed %s\n' "$RULE" "$w" "$RULE" "$RULE"
+  fi
+  printf '%s\n' "$body"
+done
+printf '\n'
+
+exit 0
+```
+
+The temp file is removed by the `EXIT` trap installed where it is created, not
+here. A trailing `rm -f "$DCC_CFG"` would miss every early exit, and by this
+point `DCC_CFG` has been reassigned to the temp path anyway — so it names the
+right file only on the one path that needed it least.
+
+- [ ] **Step 4: Emit the tier report from `statusline.sh`**
+
+`preview.sh` reads a `DCC_TIERS` line that `statusline.sh` only prints when asked. In `plugins/dcc-statusline/scripts/statusline.sh`, add immediately before each of the two `return 0` points of `dcc_main` (the end of the framed block and the end of the unframed block):
+
+```bash
+  [ -n "${DCC_PREVIEW_TIERS:-}" ] && printf 'DCC_TIERS %s/%s\n' "$DCC_TIER1" "$DCC_LINE_TIER"
+```
+
+and capture line one's tier immediately after its `dcc_line_fit` call in both blocks:
+
+```bash
+    DCC_TIER1="$DCC_LINE_TIER"
+```
+
+Declare it beside the other locals at the top of `dcc_main`:
+
+```bash
+  local names1 names2 DCC_TIER1=0
+```
+
+This costs one `[ -n ... ]` test per render when the variable is unset, and no fork.
+
+- [ ] **Step 5: Run the tests**
+
+```bash
+bash plugins/dcc-statusline/tests/preview.test.sh
+bash plugins/dcc-statusline/tests/run-all.sh
+```
+
+Expected: both `0 failed`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add plugins/dcc-statusline/scripts/preview.sh \
+        plugins/dcc-statusline/scripts/statusline.sh \
+        plugins/dcc-statusline/tests/preview.test.sh
+git commit -m "feat(statusline): add multi-width preview"
+```
+
+---
+
+### Task 11: Schema seeding and `doctor` integration
+
+The schema file itself was created in Task 9, because `validate.sh` reads its key,
+segment and theme lists at runtime. This task makes `install.sh` point new configs
+at the installed copy and routes `doctor` through `dcc_validate`.
+
+**Files:**
+- Modify: `plugins/dcc-statusline/scripts/install.sh:73-85` (`dcc_seed_config`), `:124-132` (`dcc_doctor`)
+- Modify: `plugins/dcc-statusline/tests/install.test.sh` (append)
+
+**Interfaces:**
+- Consumes: `dcc_validate <config-path>` and `plugins/dcc-statusline/scripts/dcc-statusline.schema.json`, both from Task 9.
+- Produces: a `dcc_seed_config` that writes `"$schema"` into a newly created config, and a `dcc_doctor` whose config check is `dcc_validate`.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `plugins/dcc-statusline/tests/install.test.sh`, immediately before its `finish` line:
+
+```bash
+# --- schema and validation ----------------------------------------------------
+# The schema sits under scripts/ so dcc_copy_scripts carries it to an installed
+# copy; a file at the plugin root would never be copied, and the installed
+# validate.sh would find no schema to read its name lists from.
+SCHEMA="$HERE/../scripts/dcc-statusline.schema.json"
+check "the schema file exists" "$([ -f "$SCHEMA" ] && echo yes || echo no)" "yes"
+check "the schema is valid JSON" \
+  "$(jq -e . "$SCHEMA" >/dev/null 2>&1 && echo yes || echo no)" "yes"
+check "the schema declares every top-level key" \
+  "$(jq -r '.properties | keys | length' "$SCHEMA")" "13"
+
+# An install must carry the schema across, or the installed validate.sh silently
+# stops checking key, segment and theme names.
+cphome="$(mktemp -d)"
+DCC_FAKE_HOME="$cphome" DCC_STATUSLINE_HOME="$cphome/dest" dcc_copy_scripts
+check "install copies the schema to the destination" \
+  "$([ -f "$cphome/dest/dcc-statusline.schema.json" ] && echo yes || echo no)" "yes"
+rm -rf "$cphome"
+
+# A seeded config points at the schema so editors validate while typing.
+seedhome="$(mktemp -d)"
+mkdir -p "$seedhome/.claude"
+DCC_FAKE_HOME="$seedhome" dcc_seed_config
+check "a seeded config declares \$schema" \
+  "$(jq -r '."$schema" // empty' "$seedhome/.claude/dcc-statusline.json" | grep -c 'dcc-statusline.schema.json')" "1"
+check "a seeded config still has an accounts map" \
+  "$(jq -r '.accounts | type' "$seedhome/.claude/dcc-statusline.json")" "object"
+check "a seeded config validates" \
+  "$(dcc_validate "$seedhome/.claude/dcc-statusline.json" | grep -c '^FAIL')" "0"
+rm -rf "$seedhome"
+
+# doctor names the offending key rather than only reporting that parsing failed.
+dochome="$(mktemp -d)"
+mkdir -p "$dochome/.claude"
+printf '{ "theme": "nonesuch" }' > "$dochome/.claude/dcc-statusline.json"
+out="$(DCC_FAKE_HOME="$dochome" dcc_doctor 2>&1)"
+check "doctor names an unknown theme" "$(printf '%s' "$out" | grep -c 'nonesuch')" "1"
+rm -rf "$dochome"
+```
+
+`install.test.sh` sources `install.sh`, which after this task sources `validate.sh`, so `dcc_validate` is in scope.
+
+- [ ] **Step 2: Run it to verify it fails**
+
+```bash
+bash plugins/dcc-statusline/tests/install.test.sh
+```
+
+Expected: FAIL on the seeding and `doctor` assertions — `dcc_seed_config` writes no `$schema` and `dcc_doctor` does not call `dcc_validate`. The three schema-file assertions already pass, since Task 9 created it.
+
+- [ ] **Step 3: Seed `$schema` and wire `doctor`**
 
 In `plugins/dcc-statusline/scripts/install.sh`, add the source line beside the existing two (after `lib/config.sh`):
 
@@ -2014,7 +2379,7 @@ Replace the config check in `dcc_doctor` (the `if [ -f "$cfg" ]` block, lines 12
 
 `dcc_validate` prints its own `ok`/`warn`/`FAIL` lines in the format `doctor` already uses, including the no-config case, so the surrounding branch is no longer needed.
 
-- [ ] **Step 5: Run the tests**
+- [ ] **Step 4: Run the tests**
 
 ```bash
 bash plugins/dcc-statusline/tests/install.test.sh
@@ -2023,13 +2388,12 @@ bash plugins/dcc-statusline/tests/run-all.sh
 
 Expected: both `0 failed`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add plugins/dcc-statusline/dcc-statusline.schema.json \
-        plugins/dcc-statusline/scripts/install.sh \
+git add plugins/dcc-statusline/scripts/install.sh \
         plugins/dcc-statusline/tests/install.test.sh
-git commit -m "feat(statusline): ship config schema, wire doctor"
+git commit -m "feat(statusline): seed schema ref, wire doctor"
 ```
 
 ---
@@ -2114,7 +2478,16 @@ get.
 `maxTier` caps the escalation. Zero disables shrinking entirely and restores
 segment-dropping at every width.
 
-Run `/dcc-statusline preview` to see your own config at five widths side by side.
+A meter narrower than two cells shows no bar at all, at every width including
+the widest. One cell cannot show both a filled and an empty state — the bar
+would read as empty at any figure below 100% — so the percentage carries the
+reading alone. This is the one place where the widest rendering is not simply
+the fullest one.
+
+Run `/dcc-statusline preview` to see your own config at five widths side by
+side. The narrowest of them falls below the width a frame needs, so it is
+labelled `unframed` rather than given a tier: with no frame there is no width
+budget, and nothing shrinks.
 
 ## Themes
 
@@ -2187,7 +2560,7 @@ Expected: `claude plugin validate .` reports no errors; the suite reports `0 fai
 bash plugins/dcc-statusline/scripts/preview.sh --config /dev/null
 ```
 
-Expected: five blocks. Confirm by looking that the 48-column block has a closed box with an unbroken right wall, and that its content is visibly more compact than the 200-column block. This is the one check the test suite cannot make for you — the tests assert cell counts, not that the result reads well.
+Expected: five blocks. Confirm by looking that the 60-column block has a closed box with an unbroken right wall and is visibly more compact than the 200-column block, and that the 48-column block is labelled `unframed` — it falls below `DCC_FRAME_MIN` plus the margin, which is the fallback worth seeing in a preview. This is the one check the test suite cannot make for you: the tests assert counts and labels, not that the result reads well.
 
 - [ ] **Step 6: Commit**
 
@@ -2202,9 +2575,16 @@ git commit -m "docs(statusline): document tiers, themes and preview"
 
 After Task 12, the following must all hold. Check each before declaring the work done.
 
-- [ ] `bash plugins/dcc-statusline/tests/run-all.sh` reports `0 failed` in all twelve test files.
+- [ ] `bash plugins/dcc-statusline/tests/run-all.sh` reports `0 failed` in all fourteen test files — the ten that existed at baseline plus `tiers`, `theme`, `validate` and `preview`.
 - [ ] `claude plugin validate .` passes from the repo root.
 - [ ] `bash plugins/dcc-statusline/scripts/preview.sh --config /dev/null` renders five closed boxes.
 - [ ] `grep -c 'validate\.sh' plugins/dcc-statusline/scripts/statusline.sh` returns `0`.
-- [ ] `grep -c '\$(' plugins/dcc-statusline/scripts/statusline.sh plugins/dcc-statusline/scripts/lib/*.sh` returns `0` for every file except `validate.sh`, `config.sh` (whose `dcc_parse_all` has always used `$(jq ...)`), and `install.sh`.
+- [ ] No unbudgeted command substitution on the render path. `$((` arithmetic is not a fork and does not count, so grep for `$(` excluding it:
+
+  ```bash
+  grep -n '\$(' plugins/dcc-statusline/scripts/statusline.sh \
+                plugins/dcc-statusline/scripts/lib/*.sh | grep -v '\$(('
+  ```
+
+  The only hits may be the five processes the budget already allows: four in `config.sh` (`dcc_parse_all`'s `$(jq ...)` and its three fallbacks, of which exactly one runs per render) and two in `git.sh` (`$($to git ...)` for `status` and `rev-parse`). `validate.sh` and `preview.sh` are off the render path and exempt. A hit anywhere else — `segments.sh`, `render.sh`, `frame.sh`, `statusline.sh` — is a budget violation.
 - [ ] A real session shows the status line unchanged at your normal terminal width — tier 0 is the default and nothing should look different until the terminal is narrowed.
