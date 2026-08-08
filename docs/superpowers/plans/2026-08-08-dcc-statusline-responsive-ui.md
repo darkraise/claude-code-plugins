@@ -585,7 +585,7 @@ git commit -m "feat(statusline): shrink git, model and meters by tier"
   - `dcc_line_measure` → `DCC_LINE_TOTAL`, the cells the pushed segments would occupy including separators, without building the string.
   - `_dcc_render_line <names> <tier> <mark-bad-config>` — fills `DCC_SEGS`/`DCC_SEGW` at the given tier. `mark-bad-config` of `1` appends the red `cfg?` chip when `DCC_CONFIG_BAD` is `1`.
   - `dcc_line_fit <names> <max-cells> <mark-bad-config>` → `DCC_LINE_OUT`, `DCC_LINE_CELLS`, `DCC_LINE_DROPPED`, `DCC_LINE_TIER`. A `max-cells` of `0` means no known width: renders at tier 0 only.
-  - `DCC_MAX_TIER` — from `responsive.maxTier`, default `3`, clamped to `0`–`3`.
+  - `DCC_MAX_TIER` — from `responsive.maxTier`, default `3`. Any value that is not exactly `0`, `1`, `2` or `3` — negative, oversized, non-numeric, or empty — falls back to `3`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -628,13 +628,23 @@ check "maxTier 0 falls back to dropping" "$ok" "yes"
 DCC_MAX_TIER=3
 
 # Escalation must terminate even when tier 3 still overflows, handing off to the
-# greedy drop rather than looping.
+# greedy drop rather than looping. The budget is 30, not 52: at 52 a truncated
+# 300-character branch actually fits at tier 3, so the assertions would pass
+# from an in-loop return and never exercise the fall-through they name.
 DCC_GIT_BRANCH="$(printf 'x%.0s' $(seq 1 300))"
-dcc_line_fit "dir git model" 52 0
+dcc_line_fit "dir git model" 30 0
 check "a pathological branch still reaches tier 3" "$DCC_LINE_TIER" "3"
-ok="no"; [ "$DCC_LINE_CELLS" -le 52 ] && ok="yes"
-check "a pathological branch still fits the budget" "$ok" "yes"
+ok="no"; [ "$DCC_LINE_DROPPED" -gt 0 ] && ok="yes"
+check "tier 3 overflow hands off to the greedy drop" "$ok" "yes"
 DCC_GIT_BRANCH="main"
+
+# An oversized maxTier must not reach the C-style loop, where it would wrap.
+DCC_MAX_TIER=9223372036854776000
+dcc_line_fit "model" 200 0
+check "an oversized maxTier falls back to 3" "$DCC_LINE_TIER" "0"
+check "an oversized maxTier still renders this call" \
+  "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi)" "Opus 4.8"
+DCC_MAX_TIER=3
 
 # The bad-config marker survives re-rendering.
 DCC_CONFIG_BAD=1
@@ -706,8 +716,13 @@ dcc_line_fit() { # dcc_line_fit <names> <max-cells> <mark-bad-config>
   # which is also why the frame is off -- so there is nothing to fit against and
   # tier 0 stands.
   local names="$1" max="${2:-0}" mark="${3:-0}" tier top="${DCC_MAX_TIER:-3}"
-  case "$top" in ''|*[!0-9]*) top=3 ;; esac
-  [ "$top" -gt 3 ] && top=3
+  # Whitelist the four legal values rather than range-checking. A digit guard
+  # followed by [ "$top" -gt 3 ] fails open on a value past 64-bit range: the
+  # test does not evaluate false, it errors, the clamp is skipped, and the
+  # C-style loop below wraps the value -- either spinning without bound or
+  # never executing at all, which would leave DCC_LINE_OUT holding the
+  # previous line's segments.
+  case "$top" in 0|1|2|3) : ;; *) top=3 ;; esac
   for (( tier = 0; tier <= top; tier++ )); do
     _dcc_render_line "$names" "$tier" "$mark"
     DCC_LINE_TIER="$tier"
