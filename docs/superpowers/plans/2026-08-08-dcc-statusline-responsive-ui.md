@@ -1797,6 +1797,18 @@ check "theme names are read from the schema" \
 check "the schema list includes the time segment" \
   "$(printf '%s' "$DCC_VALID_SEGMENTS" | grep -c 'time')" "1"
 
+# Membership, not counting, and deliberately on the LAST entry of each list.
+# A stray CR from a CRLF jq lands on exactly that entry, and every count-based
+# assertion above stays green with it: wc -w counts "theme\r" as one word and
+# grep -c 'time' matches "time\r". Only the glob _dcc_v_in actually performs
+# can tell the difference, so these use it directly.
+r=no; _dcc_v_in "theme" "$DCC_VALID_TOPKEYS"  && r=yes
+check "the last top-level key matches exactly" "$r" "yes"
+r=no; _dcc_v_in "time"  "$DCC_VALID_SEGMENTS" && r=yes
+check "the last segment name matches exactly"  "$r" "yes"
+r=no; _dcc_v_in "vivid" "$DCC_VALID_THEMES"   && r=yes
+check "the last theme name matches exactly"    "$r" "yes"
+
 # An unreadable schema must degrade to a warning, not take doctor down with it.
 DCC_SCHEMA_PATH=/nonexistent/schema.json
 check "a missing schema warns rather than failing" \
@@ -1812,6 +1824,15 @@ check "statusline.sh does not source validate.sh" \
   "$(grep -c 'validate\.sh' "$HERE/../scripts/statusline.sh")" "0"
 check "no render-path lib sources validate.sh" \
   "$(grep -l 'validate\.sh' "$HERE"/../scripts/lib/*.sh | grep -vc 'validate\.sh')" "0"
+
+# The two greps above search for a literal filename, so a future refactor that
+# sourced lib/*.sh in a loop would pull validate.sh onto the render path with
+# the string "validate.sh" appearing nowhere, and both would still pass. Ask
+# the loaded script itself instead. Sourcing is safe: statusline.sh guards its
+# entry point on BASH_SOURCE[0] = $0, which does not hold when sourced.
+have="$(DCC_T="$HERE/../scripts/statusline.sh" bash -c \
+  'source "$DCC_T" >/dev/null 2>&1; declare -F dcc_validate >/dev/null && echo yes || echo no')"
+check "loading statusline.sh does not define dcc_validate" "$have" "no"
 
 finish
 ```
@@ -1862,6 +1883,13 @@ _dcc_v_load_schema() { # -> DCC_VALID_TOPKEYS, _SEGMENTS, _THEMES; rc 1 if unrea
     ((.properties.lines.items.items.enum // []) | join(" ")),
     ((.properties.theme.enum // []) | join(" "))
   ' "$DCC_SCHEMA_PATH" 2>/dev/null)" || return 1
+  # Native Windows jq emits CRLF. Command substitution strips the trailing
+  # newlines but not the CR ahead of each one, so without this every list ends
+  # in a stray CR and _dcc_v_in stops matching its LAST entry -- doctor would
+  # then call the `theme` key unknown and reject a valid `time` segment or
+  # `vivid` theme. Stripping here rather than relying on sed to normalise:
+  # MSYS2's sed happens to, but that is not a property to depend on.
+  out="${out//$'\r'/}"
   DCC_VALID_TOPKEYS="$(printf '%s\n' "$out" | sed -n 1p)"
   DCC_VALID_SEGMENTS="$(printf '%s\n' "$out" | sed -n 2p)"
   DCC_VALID_THEMES="$(printf '%s\n' "$out" | sed -n 3p)"
