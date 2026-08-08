@@ -862,8 +862,15 @@ for cols in 52 88 140; do
 done
 DCC_ICON_W=0
 
-# maxTier 0 must reproduce today's behaviour exactly: no escalation, and the
-# greedy drop doing the fitting.
+# maxTier 0 must reproduce today's behaviour: no escalation, and the greedy drop
+# doing the fitting.
+#
+# Width alone cannot show that. dcc_frame_row pads every row to the frame width
+# whichever tier produced it, so a width assertion passes identically with
+# escalation on or off -- it re-tests padding, not the config. Two things
+# actually distinguish the pinned render: it differs from the default at the
+# same width, and tier 0 is the only tier that never elides a path or truncates
+# a branch, so no ellipsis can appear in it.
 cfgt="$(mktemp)"; printf '{ "responsive": { "maxTier": 0 } }' > "$cfgt"
 out="$(DCC_STATUSLINE_CONFIG="$cfgt" COLUMNS=60 bash "$SCRIPT" < "$F/full.json")"
 rowno=0
@@ -872,6 +879,13 @@ while IFS= read -r row; do
   dcc_cells "$row"
   check "maxTier 0 row $rowno still measures 56 cells" "$DCC_CELLS" "56"
 done < <(printf '%s\n' "$out")
+
+pinned="$(printf '%s' "$out" | strip_ansi)"
+defaulted="$(COLUMNS=60 bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+same="no"; [ "$pinned" = "$defaulted" ] && same="yes"
+check "maxTier 0 changes what renders at this width" "$same" "no"
+check "maxTier 0 never elides a path or truncates a branch" \
+  "$(printf '%s' "$pinned" | grep -c '…')" "0"
 rm -f "$cfgt"
 ```
 
