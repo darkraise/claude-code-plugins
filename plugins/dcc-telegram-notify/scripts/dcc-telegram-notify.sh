@@ -103,6 +103,46 @@ seed_config
 # each git repo gets its own auto-created topic; non-repos use TELEGRAM_TOPIC_ID.
 : "${TELEGRAM_TOPIC_MODE:=shared}"
 : "${TELEGRAM_TOPIC_MAP:=$TELEGRAM_NOTIFY_HOME/topics.json}"
+
+# Which notifications are allowed to send. Comma- or space-separated tokens:
+#   permission    a tool call is waiting for approval
+#   input         a question is waiting, or an agent asked for input
+#   stop-question the turn ended on a question
+#   stop-done     a work turn finished
+#   stop-reply    a conversational turn finished
+# Aliases: stop = the three stop-* tokens, all = everything, none = nothing.
+# Unset gets the default below; set-but-empty means nothing, same as none.
+TELEGRAM_EVENTS_RESOLVED=" "
+TELEGRAM_EVENTS_UNKNOWN=""
+parse_events() {
+  local raw tok out="" unknown=""
+  if [ "${TELEGRAM_EVENTS+set}" = "set" ]; then raw="$TELEGRAM_EVENTS"
+  else raw="permission,input,stop-question"; fi
+  raw=$(printf '%s' "$raw" | tr 'A-Z,' 'a-z ')
+  for tok in $raw; do
+    case "$tok" in
+      permission|input|stop-question|stop-done|stop-reply) out="$out$tok " ;;
+      stop) out="${out}stop-question stop-done stop-reply " ;;
+      all)  out="${out}permission input stop-question stop-done stop-reply " ;;
+      none) out=""; break ;;
+      # A typo must never break notifications, so it is dropped and reported
+      # rather than raised. `status` surfaces whatever landed here.
+      *)    unknown="$unknown$tok " ;;
+    esac
+  done
+  # shellcheck disable=SC2086 -- deliberate word splitting to dedupe the set
+  [ -n "$out" ] && out=$(printf '%s\n' $out | LC_ALL=C sort -u | tr '\n' ' ')
+  TELEGRAM_EVENTS_RESOLVED=" $out"
+  TELEGRAM_EVENTS_UNKNOWN="${unknown% }"
+}
+parse_events
+
+event_enabled() {
+  case "$TELEGRAM_EVENTS_RESOLVED" in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+
+events_list() { local l="${TELEGRAM_EVENTS_RESOLVED# }"; printf '%s' "${l% }"; }
+
 # Machine label in the header, so you can tell which host needs attention.
 # Defaults to this machine's hostname; set a friendly name to override.
 : "${TELEGRAM_MACHINE_NAME:=$(hostname 2>/dev/null)}"
