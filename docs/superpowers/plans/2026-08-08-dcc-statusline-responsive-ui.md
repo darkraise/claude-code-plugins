@@ -2478,7 +2478,16 @@ get.
 `maxTier` caps the escalation. Zero disables shrinking entirely and restores
 segment-dropping at every width.
 
-Run `/dcc-statusline preview` to see your own config at five widths side by side.
+A meter narrower than two cells shows no bar at all, at every width including
+the widest. One cell cannot show both a filled and an empty state — the bar
+would read as empty at any figure below 100% — so the percentage carries the
+reading alone. This is the one place where the widest rendering is not simply
+the fullest one.
+
+Run `/dcc-statusline preview` to see your own config at five widths side by
+side. The narrowest of them falls below the width a frame needs, so it is
+labelled `unframed` rather than given a tier: with no frame there is no width
+budget, and nothing shrinks.
 
 ## Themes
 
