@@ -59,8 +59,10 @@ Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/preview.sh" $ARGUMENTS`.
 
 It renders the user's real config against a sample payload at 48, 60, 80, 120 and
 200 columns, labelling each block with the width and the tier each line settled
-on. Relay the output verbatim inside a fenced block — reformatting it destroys
-the alignment that is the entire point.
+on — except a block too narrow to frame, which is labelled `unframed` instead,
+since with no frame there is no width budget to tier against. Relay the output
+verbatim inside a fenced block — reformatting it destroys the alignment that is
+the entire point.
 
 Accepts `--width N` for a single width, `--theme NAME` to try a theme without
 editing the config, and `--config PATH` for a file that is not installed.

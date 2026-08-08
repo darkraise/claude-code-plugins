@@ -70,7 +70,16 @@ get.
 value — including a negative number or one above `3` — falls back to `3`. Zero
 disables shrinking entirely and restores segment-dropping at every width.
 
-Run `/dcc-statusline preview` to see your own config at five widths side by side.
+A meter narrower than two cells shows no bar at all, at every width including
+the widest. One cell cannot show both a filled and an empty state — the bar
+would read as empty at any figure below 100% — so the percentage carries the
+reading alone. This is the one place where the widest rendering is not simply
+the fullest one.
+
+Run `/dcc-statusline preview` to see your own config at five widths side by
+side. The narrowest of them falls below the width a frame needs, so it is
+labelled `unframed` rather than given a tier: with no frame there is no width
+budget, and nothing shrinks.
 
 ## Themes
 
@@ -130,7 +139,7 @@ defaults.
 | `separator` | String placed between segments, or a two-element array giving each line its own; a shorter array reuses its last element for the missing line, and an empty array falls back to the default |
 | `theme` | `default`, `minimal`, `mono`, or `vivid` |
 | `responsive.maxTier` | Cap on shrinking, `0`–`3`; default `3`; any other value falls back to `3` |
-| `meters.width` | Bar width per meter, keyed `ctx`, `5h`, `7d` |
+| `meters.width` | Bar width per meter, keyed `ctx`, `5h`, `7d`; values under `2` drop the bar entirely |
 | `meters.showEta` | Show the reset countdown |
 | `meters.showTokens` | Show the token count on the context meter |
 | `meters.ramp` | Color stops, each `{ "at": <pct>, "color": <name>, "bold": <bool> }` |
