@@ -42,7 +42,7 @@ Then configure and test:
 /dcc-telegram-notify setup
 ```
 
-That seeds `~/.telegram-notify/telegram.env`, walks you through pasting your bot token,
+That seeds `~/.dcc-telegram-notify/telegram.env`, walks you through pasting your bot token,
 helps you find your chat id, and sends a test message. To change settings later, run
 `/dcc-telegram-notify edit` to open that config file in your default editor. You can also
 re-run `/dcc-telegram-notify test`, `/dcc-telegram-notify discover`, or `/dcc-telegram-notify
@@ -50,7 +50,7 @@ status` any time.
 
 ### Manual configuration (alternative to `/dcc-telegram-notify setup`)
 
-The first hook firing creates `~/.telegram-notify/telegram.env` with an empty token
+The first hook firing creates `~/.dcc-telegram-notify/telegram.env` with an empty token
 (so notifications stay silent until configured). Open it in your default editor with
 `/dcc-telegram-notify edit` (or `bash scripts/dcc-telegram-notify.sh --edit`) and set at least:
 
@@ -71,7 +71,7 @@ Everything the plugin *writes* lives outside the plugin directory, in one per-us
 home that all accounts share and that survives plugin updates:
 
 ```
-~/.telegram-notify/
+~/.dcc-telegram-notify/
 ├── telegram.env      your token + settings (chmod 600)
 ├── topics.json       per-project topic map (per-project mode)
 ├── state/            per-session turn-start timestamps
@@ -87,7 +87,7 @@ Each account (each `CLAUDE_CONFIG_DIR`) enables the plugin independently — run
 `/plugin install` line above once per account. Because a plugin registers its own hooks,
 you never hand-edit `settings.json`, so there's no shared-file breakage between accounts.
 
-All accounts share the single `~/.telegram-notify/telegram.env` (one token, one
+All accounts share the single `~/.dcc-telegram-notify/telegram.env` (one token, one
 destination). Messages are told apart by the **account label**, auto-derived from
 `CLAUDE_CONFIG_DIR`:
 
@@ -103,13 +103,33 @@ TELEGRAM_ACCOUNT_LABELS={".claude":"main",".claude-alt":"alt"}
 `TELEGRAM_ACCOUNT_LABEL=<name>` forces one label everywhere (set it empty to hide the
 segment). Don't put that in the shared file if you want per-account labels — use the map.
 
-## The three hook events
+## Which events notify you
 
-| Event | Fires when | Message |
+`TELEGRAM_EVENTS` is a comma-separated list of the notifications you want. The
+default, `permission,input,stop-question`, sends only when the session is
+actually blocked waiting on you.
+
+| Token | Fires when | Message |
 |-------|-----------|---------|
-| `UserPromptSubmit` | You submit a prompt | silent — only starts the duration timer |
-| `Notification` (`permission_prompt\|agent_needs_input`) | A prompt needs approval or an agent needs input | 🔐 / ❓ |
-| `Stop` | Claude finishes a turn | ✅ Done, 💬 Replied, or ❓ Waiting on you if it ends on a question |
+| `permission` | A tool call is waiting for your approval | 🔐 Needs permission |
+| `input` | A question is waiting, or an agent asked for input | ❓ / 🔔 |
+| `stop-question` | The turn ended on a question | ❓ Waiting on you |
+| `stop-done` | A work turn finished | ✅ Done |
+| `stop-reply` | A conversational turn finished | 💬 Replied |
+
+Three aliases expand for you: `stop` is all three `stop-*` tokens, `all` is
+everything, and `none` silences the plugin without deleting your bot token.
+Unknown tokens are ignored rather than treated as errors, so a typo can't take
+your notifications down — `/dcc-telegram-notify status` reports any it dropped.
+
+`UserPromptSubmit` is not in the list. It sends nothing; it only starts the
+timer that gives turn-end messages their duration.
+
+> **Upgrading from `telegram-notify` 1.0.x?** Two things change. Your config and
+> state move from `~/.telegram-notify` to `~/.dcc-telegram-notify` automatically
+> on the first hook firing — nothing to do. And `✅ Done` / `💬 Replied` turn-end
+> messages stop arriving, because the new default omits them. Set
+> `TELEGRAM_EVENTS=all` to get the old behavior back.
 
 ## Optional LLM turn summaries
 
@@ -118,7 +138,7 @@ Off by default. Set `TELEGRAM_LLM_URL` to an OpenAI-compatible base URL (and
 sentences. If the gateway is unreachable, the notification still sends using the
 message's own opening lines — nothing is lost, just less polished.
 
-## Config reference (`~/.telegram-notify/telegram.env`)
+## Config reference (`~/.dcc-telegram-notify/telegram.env`)
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
@@ -126,6 +146,7 @@ message's own opening lines — nothing is lost, just less polished.
 | `TELEGRAM_CHAT_ID` | — | Target chat id (negative for supergroups). |
 | `TELEGRAM_TOPIC_ID` | *(empty)* | Forum topic id; empty posts to the main thread. |
 | `TELEGRAM_TOPIC_MODE` | `shared` | `shared` or `per-project`. |
+| `TELEGRAM_EVENTS` | `permission,input,stop-question` | Which notifications send; see above. |
 | `TELEGRAM_LLM_URL` | *(empty = off)* | OpenAI-compatible gateway base URL for summaries. |
 | `TELEGRAM_LLM_MODEL` | `auto/best-fast` | Model used for summaries. |
 | `TELEGRAM_LLM_API_KEY` | *(empty)* | Sent as `Authorization: Bearer` only if set. |
@@ -135,7 +156,7 @@ message's own opening lines — nothing is lost, just less polished.
 | `TELEGRAM_MACHINE_NAME` | *(hostname)* | `💻` label in the header. |
 | `TELEGRAM_ACCOUNT_LABEL` | *(auto)* | `👤` label; forces a value everywhere, empty hides it. |
 | `TELEGRAM_ACCOUNT_LABELS` | *(none)* | JSON map of config-dir basename → label. |
-| `TELEGRAM_NOTIFY_HOME` | `~/.telegram-notify` | Where config/state live. |
+| `TELEGRAM_NOTIFY_HOME` | `~/.dcc-telegram-notify` | Where config/state live. |
 | `TELEGRAM_NOTIFY_ENV` | *(unset)* | Explicit path to the config file. |
 | `TELEGRAM_DEBUG` | `0` | `1` traces each hook firing to `debug.log`. |
 
@@ -155,11 +176,11 @@ message's own opening lines — nothing is lost, just less polished.
   (or a second machine) with an empty map can't discover a topic you already have and
   creates a new one with the **same name** (Telegram allows duplicate names). To reuse an
   existing topic, pin its id — e.g. `{ "github.com/you/repo": 42 }` in
-  `~/.telegram-notify/topics.json`, getting the id from `--discover` — or share that file
+  `~/.dcc-telegram-notify/topics.json`, getting the id from `--discover` — or share that file
   (or point `TELEGRAM_TOPIC_MAP` at a synced path) across machines.
 - **Same bot on many machines is fine** — sending has no polling conflict. Only
   `--discover` (getUpdates) can conflict with another long-poller.
 - **`--edit` on a headless box.** With no GUI and no `$VISUAL`/`$EDITOR`, `--edit`
   will not launch a blocking terminal editor (nano/vi) when there's no interactive
   terminal — it prints the config path instead. Set `$EDITOR`/`$VISUAL`, or just edit
-  `~/.telegram-notify/telegram.env` directly.
+  `~/.dcc-telegram-notify/telegram.env` directly.

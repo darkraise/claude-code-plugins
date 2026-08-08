@@ -4,6 +4,7 @@
 #   --discover: lists chats/topics the bot can see, to find your IDs
 #   --test:     sends a test message to the configured destination
 #   --edit:     opens the config file in your default editor
+#   --events:   prints which notifications are enabled, and any unknown tokens
 set -uo pipefail
 
 # Config and mutable state live in a stable per-user home, NOT beside the script:
@@ -66,6 +67,17 @@ TELEGRAM_TOPIC_ID=
 # repo auto-creates its own topic; non-repos use the shared topic). per-project
 # needs the bot to be a group ADMIN with the Manage Topics right.
 TELEGRAM_TOPIC_MODE=shared
+
+# --- Which events notify you -------------------------------------------------
+# Comma-separated list. Tokens:
+#   permission     a tool call is waiting for your approval
+#   input          a question is waiting, or an agent asked for input
+#   stop-question  the turn ended on a question
+#   stop-done      a work turn finished
+#   stop-reply     a conversational turn finished
+# Aliases: stop (all three stop-*), all, none. Unknown tokens are ignored.
+# The default is everything that leaves the session blocked on you.
+TELEGRAM_EVENTS=permission,input,stop-question
 
 # --- Optional LLM turn summaries (OFF by default) ----------------------------
 # Leave TELEGRAM_LLM_URL empty to disable. Set it to an OpenAI-compatible base
@@ -710,6 +722,11 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
       else
         die "Telegram rejected it: $(jq -r '.description // "unknown"' <<<"$resp")"
       fi
+      ;;
+    --events)
+      printf 'enabled: %s\n' "$(events_list)"
+      [ -n "$TELEGRAM_EVENTS_UNKNOWN" ] && \
+        printf 'ignored (not valid tokens): %s\n' "$TELEGRAM_EVENTS_UNKNOWN"
       ;;
     "") main ;;
     *) die "unknown option: $1 (use --discover, --test, --edit, or pipe hook JSON on stdin)" ;;

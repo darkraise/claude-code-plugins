@@ -14,7 +14,7 @@ SCRIPT="$HERE/../scripts/dcc-telegram-notify.sh"
 FIXTURES="$HERE/fixtures"
 
 # Never touch the real config home: Task 2 adds a load-time migration that would
-# otherwise move this machine's actual ~/.telegram-notify during a test run.
+# otherwise move this machine's actual ~/.dcc-telegram-notify during a test run.
 export TELEGRAM_NOTIFY_HOME="$(mktemp -d)"
 # Isolate from the real config/token, and keep the flush-wait poll short.
 export TELEGRAM_NOTIFY_ENV="$(mktemp -u)"
