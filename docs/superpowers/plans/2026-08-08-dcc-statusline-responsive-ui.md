@@ -2061,6 +2061,32 @@ check "an unknown flag exits 2" "$rc" "2"
 bash "$PREVIEW" --help >/dev/null 2>&1; rc=$?
 check "--help exits 0" "$rc" "0"
 
+# A trailing flag must error rather than spin: `shift 2` with one argument left
+# returns 1 and shifts nothing, so the parse loop would never terminate. Run
+# under timeout so a regression fails the suite instead of hanging it.
+timeout 5 bash "$PREVIEW" --config /dev/null --width >/dev/null 2>&1; rc=$?
+check "a trailing --width exits 2 rather than hanging" "$rc" "2"
+timeout 5 bash "$PREVIEW" --theme >/dev/null 2>&1; rc=$?
+check "a trailing --theme exits 2 rather than hanging" "$rc" "2"
+
+# A path the user typed must fail loudly; a preview of built-in defaults would
+# look like a successful preview of a config that was never read.
+bash "$PREVIEW" --config /no/such/file.json >/dev/null 2>&1; rc=$?
+check "a missing explicit config exits 2" "$rc" "2"
+
+# But an explicit /dev/null is legitimate -- it is how the tests ask for the
+# built-in defaults, and -e accepts it where -f would not.
+bash "$PREVIEW" --config /dev/null --width 100 >/dev/null 2>&1; rc=$?
+check "an explicit /dev/null config is accepted" "$rc" "0"
+
+# A config that exists but does not parse warns on stderr and still renders.
+badcfg="$(mktemp)"; printf '{ not json' > "$badcfg"
+out2="$(bash "$PREVIEW" --config "$badcfg" --width 100 2>&1)"; rc=$?
+check "a malformed config still exits 0" "$rc" "0"
+check "a malformed config says so" \
+  "$(printf '%s' "$out2" | grep -c 'not valid JSON')" "1"
+rm -f "$badcfg"
+
 finish
 ```
 
@@ -2101,28 +2127,61 @@ usage: preview.sh [--width N] [--theme NAME] [--config PATH]
 TXT
 }
 
+DCC_CFG_GIVEN=0
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --width)  DCC_WIDTHS="${2:-}"; shift 2 ;;
-    --theme)  DCC_THEME="${2:-}";  shift 2 ;;
-    --config) DCC_CFG="${2:-}";    shift 2 ;;
+    --width|--theme|--config)
+      # `shift 2` with a single argument remaining returns 1 and shifts
+      # nothing, so $# never decreases and this loop spins at full CPU with no
+      # output. A trailing flag is an ordinary typo; it must not lock the
+      # user's terminal.
+      [ $# -ge 2 ] || { printf 'preview.sh: %s needs a value\n' "$1" >&2; exit 2; }
+      case "$1" in
+        --width)  DCC_WIDTHS="$2" ;;
+        --theme)  DCC_THEME="$2"  ;;
+        --config) DCC_CFG="$2"; DCC_CFG_GIVEN=1 ;;
+      esac
+      shift 2
+      ;;
     --help|-h) _dcc_usage; exit 0 ;;
     *) printf 'preview.sh: unknown option %s\n' "$1" >&2; _dcc_usage >&2; exit 2 ;;
   esac
 done
 
-[ -n "$DCC_CFG" ] || DCC_CFG="${DCC_STATUSLINE_CONFIG:-$HOME/.claude/dcc-statusline.json}"
-[ -f "$DCC_CFG" ] || DCC_CFG=/dev/null
+if [ "$DCC_CFG_GIVEN" -eq 1 ]; then
+  # A path the user typed is not the same as a path that merely defaults.
+  # Falling back to defaults here would render a full preview and exit 0 for a
+  # typo, which reads as a successful preview of a config that was never read.
+  # Tested with -e rather than -f so an explicit /dev/null stays legitimate.
+  [ -e "$DCC_CFG" ] || { printf 'preview.sh: no such config: %s\n' "$DCC_CFG" >&2; exit 2; }
+else
+  DCC_CFG="${DCC_STATUSLINE_CONFIG:-$HOME/.claude/dcc-statusline.json}"
+  [ -f "$DCC_CFG" ] || DCC_CFG=/dev/null
+fi
+
+# A config that exists but does not parse would otherwise render as built-in
+# defaults with nothing said about it -- the same silent-success failure as a
+# mistyped path, reached a different way. This is a diagnostic tool; say so.
+if [ "$DCC_CFG" != /dev/null ] && ! jq -e . "$DCC_CFG" >/dev/null 2>&1; then
+  printf 'preview.sh: %s is not valid JSON; previewing built-in defaults\n' "$DCC_CFG" >&2
+  DCC_CFG=/dev/null
+fi
 
 # A theme override is applied by merging it over the chosen config into a temp
 # file, so the user's own file is never touched.
 if [ -n "$DCC_THEME" ]; then
   tmp="$(mktemp)"
+  # The trap goes in before anything can fail, so the bad-width exit below and
+  # the normal exit both clean up.
+  trap 'rm -f "$tmp"' EXIT
   jq --arg t "$DCC_THEME" '. + {theme: $t}' "$DCC_CFG" > "$tmp" 2>/dev/null
   # Tested with -s rather than on jq's exit status: jq run against /dev/null (or
   # any empty file) reads no JSON value, writes nothing, and still exits 0, so an
   # exit-status check would leave an empty config here and silently lose the theme.
-  [ -s "$tmp" ] || printf '{"theme":"%s"}' "$DCC_THEME" > "$tmp"
+  # jq -n --arg builds the fallback rather than printf, which would emit invalid
+  # JSON for a theme name containing a quote or a backslash.
+  [ -s "$tmp" ] || jq -n --arg t "$DCC_THEME" '{theme: $t}' > "$tmp"
   DCC_CFG="$tmp"
 fi
 
