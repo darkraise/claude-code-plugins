@@ -1,4 +1,4 @@
-# telegram-notify — a Claude Code plugin
+# dcc-telegram-notify — a Claude Code plugin
 
 Push a Telegram message when a Claude Code session **finishes a turn**, **ends on a
 question**, or **needs your attention** (a permission prompt or an agent asking for
@@ -33,36 +33,36 @@ This plugin is published in the **darkraise** marketplace. On any machine:
 
 ```
 /plugin marketplace add darkraise/claude-code-plugins
-/plugin install telegram-notify@darkraise
+/plugin install dcc-telegram-notify@darkraise
 ```
 
 Then configure and test:
 
 ```
-/telegram-notify setup
+/dcc-telegram-notify setup
 ```
 
 That seeds `~/.telegram-notify/telegram.env`, walks you through pasting your bot token,
 helps you find your chat id, and sends a test message. To change settings later, run
-`/telegram-notify edit` to open that config file in your default editor. You can also
-re-run `/telegram-notify test`, `/telegram-notify discover`, or `/telegram-notify
+`/dcc-telegram-notify edit` to open that config file in your default editor. You can also
+re-run `/dcc-telegram-notify test`, `/dcc-telegram-notify discover`, or `/dcc-telegram-notify
 status` any time.
 
-### Manual configuration (alternative to `/telegram-notify setup`)
+### Manual configuration (alternative to `/dcc-telegram-notify setup`)
 
 The first hook firing creates `~/.telegram-notify/telegram.env` with an empty token
 (so notifications stay silent until configured). Open it in your default editor with
-`/telegram-notify edit` (or `bash scripts/telegram-notify.sh --edit`) and set at least:
+`/dcc-telegram-notify edit` (or `bash scripts/dcc-telegram-notify.sh --edit`) and set at least:
 
 ```
 TELEGRAM_BOT_TOKEN=123456789:AAE...      # from @BotFather
-TELEGRAM_CHAT_ID=-1001234567890          # from: bash scripts/telegram-notify.sh --discover
+TELEGRAM_CHAT_ID=-1001234567890          # from: bash scripts/dcc-telegram-notify.sh --discover
 ```
 
 Send a test:
 
 ```
-bash scripts/telegram-notify.sh --test
+bash scripts/dcc-telegram-notify.sh --test
 ```
 
 ## Where things live

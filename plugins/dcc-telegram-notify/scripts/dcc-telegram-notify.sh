@@ -30,14 +30,14 @@ seed_config() {
   [ -n "${TELEGRAM_NOTIFY_ENV:-}" ] && return 0
   [ -f "$CONFIG_FILE" ] && return 0
   cat > "$CONFIG_FILE" 2>/dev/null <<'EOF'
-# Telegram notification config for the Claude Code telegram-notify plugin.
+# Telegram notification config for the Claude Code dcc-telegram-notify plugin.
 # Keep this file private -- it holds your bot token.
 
 # From @BotFather, looks like 123456789:AAE...  (required; empty = notifications off)
 TELEGRAM_BOT_TOKEN=
 
 # Target chat id. Supergroups are negative, e.g. -1001234567890
-# Find it with the /telegram-notify command, or:  telegram-notify.sh --discover
+# Find it with the /dcc-telegram-notify command, or:  dcc-telegram-notify.sh --discover
 TELEGRAM_CHAT_ID=
 
 # Forum topic ("channel") id inside the group. Empty posts to the main thread.
@@ -124,7 +124,7 @@ REPO_KEY=""; REPO_NAME=""; SEND_TOPIC=""
 TELEGRAM_DEBUG_LOG="${TELEGRAM_DEBUG_LOG:-$TELEGRAM_NOTIFY_HOME/debug.log}"
 dbg() { [ "${TELEGRAM_DEBUG:-0}" = "1" ] && printf '%s [pid %s] | %s\n' "$(date -u +%FT%T.%3NZ)" "$$" "$*" >> "$TELEGRAM_DEBUG_LOG" 2>/dev/null; return 0; }
 
-die() { echo "telegram-notify: $*" >&2; exit 1; }
+die() { echo "dcc-telegram-notify: $*" >&2; exit 1; }
 
 html_escape() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 

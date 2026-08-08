@@ -1,4 +1,4 @@
-# Design — telegram-notify plugin
+# Design — dcc-telegram-notify plugin
 
 Date: 2026-07-18
 
@@ -20,14 +20,14 @@ plugin that works on Windows, Linux, and macOS and supports multiple Claude acco
 
 - **`hooks/hooks.json`** registers three events (`UserPromptSubmit`, `Notification`
   matching `permission_prompt|agent_needs_input`, `Stop`), each running
-  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/telegram-notify.sh"` async. The `bash …` prefix
+  `bash "${CLAUDE_PLUGIN_ROOT}/scripts/dcc-telegram-notify.sh"` async. The `bash …` prefix
   is the portable invocation (Git Bash on Windows, native bash elsewhere), matching the
   official security-guidance plugin.
-- **`scripts/telegram-notify.sh`** is the engine. It reads the hook JSON on stdin and
+- **`scripts/dcc-telegram-notify.sh`** is the engine. It reads the hook JSON on stdin and
   dispatches on `hook_event_name`; `--test` and `--discover` are maintenance modes.
   Config/state paths anchor to `~/.telegram-notify/`. First run seeds a commented
   `telegram.env` with an **empty** token so hooks stay silent until configured.
-- **`commands/telegram-notify.md`** is a `/telegram-notify setup|test|discover|status`
+- **`commands/dcc-telegram-notify.md`** is a `/dcc-telegram-notify setup|test|discover|status`
   slash command for configuration UX.
 - **`.claude-plugin/{plugin.json,marketplace.json}`** are the manifests.
 
