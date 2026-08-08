@@ -2231,9 +2231,13 @@ for w in $DCC_WIDTHS; do
 done
 printf '\n'
 
-[ -n "$DCC_THEME" ] && rm -f "$DCC_CFG"
 exit 0
 ```
+
+The temp file is removed by the `EXIT` trap installed where it is created, not
+here. A trailing `rm -f "$DCC_CFG"` would miss every early exit, and by this
+point `DCC_CFG` has been reassigned to the temp path anyway — so it names the
+right file only on the one path that needed it least.
 
 - [ ] **Step 4: Emit the tier report from `statusline.sh`**
 
