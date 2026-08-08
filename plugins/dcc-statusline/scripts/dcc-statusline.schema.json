@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/darkraise/claude-code-plugins/plugins/dcc-statusline/dcc-statusline.schema.json",
+  "title": "dcc-statusline configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "theme": {
+      "description": "A named preset, merged between the defaults and this file.",
+      "enum": ["default", "minimal", "mono", "vivid"]
+    },
+    "lines": {
+      "description": "Two arrays of segment names, in render order.",
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "array",
+        "items": {
+          "enum": ["dir", "git", "model", "effort", "fast", "agent", "style",
+                   "account", "ctx", "cost", "5h", "7d", "time"]
+        }
+      }
+    },
+    "separator": {
+      "description": "A string used on both lines, or an array of one per line.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" }, "maxItems": 2 }
+      ]
+    },
+    "frame": { "enum": ["auto", "box", "none"] },
+    "frameMargin": {
+      "description": "Cells to hold the box back from the reported terminal width.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "responsive": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxTier": {
+          "description": "0 disables shrinking; 3 allows the most compact rendering.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        }
+      }
+    },
+    "icons": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["auto", "nerd", "unicode"] },
+        "width": { "type": "integer", "minimum": 0, "maximum": 2 }
+      }
+    },
+    "palette": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dir":    { "$ref": "#/$defs/color" },
+        "git":    { "$ref": "#/$defs/color" },
+        "model":  { "$ref": "#/$defs/color" },
+        "effort": { "$ref": "#/$defs/color" },
+        "fast":   { "$ref": "#/$defs/color" },
+        "cost":   { "$ref": "#/$defs/color" },
+        "mute":   { "$ref": "#/$defs/color" },
+        "effortLevels": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "low":    { "$ref": "#/$defs/color" },
+            "medium": { "$ref": "#/$defs/color" },
+            "high":   { "$ref": "#/$defs/color" },
+            "xhigh":  { "$ref": "#/$defs/color" },
+            "max":    { "$ref": "#/$defs/color" }
+          }
+        }
+      }
+    },
+    "meters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ctx": { "type": "integer", "minimum": 0 },
+            "5h":  { "type": "integer", "minimum": 0 },
+            "7d":  { "type": "integer", "minimum": 0 }
+          }
+        },
+        "showEta": { "type": "boolean" },
+        "showTokens": { "type": "boolean" },
+        "ramp": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["at", "color"],
+            "properties": {
+              "at": { "type": "integer", "minimum": 0, "maximum": 100 },
+              "color": { "$ref": "#/$defs/color" },
+              "bold": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "accounts": {
+      "description": "Config directory in ~/... form to its frame colour.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "color": { "$ref": "#/$defs/color" } }
+      }
+    },
+    "glyphs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filled": { "type": "string" },
+        "empty":  { "type": "string" },
+        "dirty":  { "type": "string" }
+      }
+    },
+    "segments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dir":   { "type": "object", "additionalProperties": false,
+                   "properties": { "style": { "enum": ["", "full", "repo", "leaf"] } } },
+        "git":   { "type": "object", "additionalProperties": false,
+                   "properties": { "counters": { "type": "boolean" },
+                                   "maxBranch": { "type": "integer", "minimum": 0 } } },
+        "model": { "type": "object", "additionalProperties": false,
+                   "properties": { "short": { "type": "boolean" } } },
+        "ctx":   { "type": "object", "additionalProperties": false,
+                   "properties": { "label": { "type": "string" } } },
+        "5h":    { "type": "object", "additionalProperties": false,
+                   "properties": { "label": { "type": "string" } } },
+        "7d":    { "type": "object", "additionalProperties": false,
+                   "properties": { "label": { "type": "string" } } }
+      }
+    }
+  },
+  "$defs": {
+    "color": {
+      "description": "A colour name, or a 256-colour index as a string.",
+      "type": "string",
+      "pattern": "^(black|red|green|yellow|blue|magenta|cyan|white|orange|gray|[0-9]{1,3})$"
+    }
+  }
+}
