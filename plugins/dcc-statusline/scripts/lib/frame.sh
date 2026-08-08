@@ -19,11 +19,11 @@ DCC_FRAME_ON=0
 DCC_FRAME_COLS=0
 DCC_FRAME_BUDGET=0
 DCC_FRAME_OUT=""
+DCC_WIDTH_COLS=0
 
-dcc_frame_init() { # -> DCC_FRAME_ON, DCC_FRAME_COLS
+dcc_frame_init() { # -> DCC_FRAME_ON, DCC_FRAME_COLS, DCC_WIDTH_COLS
   local cols="${COLUMNS:-}" margin="${DCC_FRAME_MARGIN:-4}"
-  DCC_FRAME_ON=0; DCC_FRAME_COLS=0
-  [ "${DCC_FRAME_MODE:-auto}" = "none" ] && return 0
+  DCC_FRAME_ON=0; DCC_FRAME_COLS=0; DCC_WIDTH_COLS=0
   case "$cols" in ''|*[!0-9]*) return 0 ;; esac
   # COLUMNS reports the terminal, but the status line is drawn inside a region
   # narrower than that, so drawing to the full width gets the right end cut off.
@@ -34,7 +34,18 @@ dcc_frame_init() { # -> DCC_FRAME_ON, DCC_FRAME_COLS
   # 4 rather than 2 -- two for the indent, two so the last cell is never written.
   case "$margin" in ""|*[!0-9]*) margin=4 ;; esac
   [ "$cols" -gt "$margin" ] || return 0
-  cols=$(( cols - margin ))
+  # Force base 10 on both operands: a zero-padded value like "048" passes the
+  # digits-only guard above but is not valid octal, and $(( )) treats a
+  # leading zero as an octal prefix by default. Invalid octal errors and
+  # aborts the whole render; valid octal (a margin like "010") is worse --
+  # it silently computes against the wrong number with no error at all.
+  cols=$(( 10#$cols - 10#$margin ))
+  # The usable width is known now, whatever is decided about the box below.
+  # Fitting a line depends on knowing the width; drawing a frame depends on
+  # having room for one. Conflating the two cost every terminal under 52
+  # columns the whole responsive feature -- it knew its width and threw it away.
+  DCC_WIDTH_COLS="$cols"
+  [ "${DCC_FRAME_MODE:-auto}" = "none" ] && return 0
   [ "$cols" -ge "$DCC_FRAME_MIN" ] || return 0
   DCC_FRAME_COLS="$cols"
   DCC_FRAME_ON=1
@@ -44,7 +55,7 @@ dcc_frame_budget() { # -> DCC_FRAME_BUDGET, the cells a content line may use
   if [ "$DCC_FRAME_ON" -eq 1 ]; then
     DCC_FRAME_BUDGET=$(( DCC_FRAME_COLS - 4 ))
   else
-    DCC_FRAME_BUDGET=0
+    DCC_FRAME_BUDGET="$DCC_WIDTH_COLS"
   fi
 }
 

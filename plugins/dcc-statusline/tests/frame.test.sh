@@ -130,4 +130,57 @@ dcc_frame_bottom
 dcc_cells "$DCC_FRAME_OUT"
 check "a margined bottom rule measures the drawn width" "$DCC_CELLS" "98"
 
+# --- the width budget is independent of the frame -----------------------------
+# Fitting needs a known width; framing needs room for a box. Conflating them
+# meant a terminal under 52 columns discarded a width it actually knew.
+DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=4; COLUMNS=48; dcc_frame_init
+check "too narrow to frame still knows its width" "$DCC_WIDTH_COLS" "44"
+check "and still does not frame"                   "$DCC_FRAME_ON"   "0"
+dcc_frame_budget
+check "an unframed known width yields a budget"    "$DCC_FRAME_BUDGET" "44"
+
+DCC_FRAME_MODE="none"; DCC_FRAME_MARGIN=4; COLUMNS=100; dcc_frame_init
+check "frame none still knows its width"  "$DCC_WIDTH_COLS" "96"
+check "frame none does not frame"         "$DCC_FRAME_ON"   "0"
+dcc_frame_budget
+check "frame none still yields a budget"  "$DCC_FRAME_BUDGET" "96"
+
+# An unknown width must stay unknown -- this is what keeps tier 0 byte-identical.
+DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=4; COLUMNS=""; dcc_frame_init
+check "an absent COLUMNS knows no width" "$DCC_WIDTH_COLS" "0"
+dcc_frame_budget
+check "and yields no budget"             "$DCC_FRAME_BUDGET" "0"
+
+DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=4; COLUMNS=abc; dcc_frame_init
+check "a non-numeric COLUMNS knows no width" "$DCC_WIDTH_COLS" "0"
+
+# A COLUMNS no larger than the margin leaves nothing usable.
+DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=4; COLUMNS=4; dcc_frame_init
+check "COLUMNS equal to the margin knows no width" "$DCC_WIDTH_COLS" "0"
+
+# Framed mode is untouched.
+DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=4; COLUMNS=100; dcc_frame_init
+check "a framed terminal still frames"       "$DCC_FRAME_ON"  "1"
+dcc_frame_budget
+check "a framed budget still insets by four" "$DCC_FRAME_BUDGET" "92"
+
+# A zero-padded COLUMNS must not be read as octal. $(( )) treats a leading
+# zero as an octal prefix by default, and "048" is not valid octal, so an
+# unguarded subtraction aborts the whole render rather than merely miscounting.
+DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=4; COLUMNS=048; dcc_frame_init
+check "a zero-padded COLUMNS knows the same width as its unpadded form" \
+  "$DCC_WIDTH_COLS" "44"
+
+# DCC_FRAME_MARGIN is user-configurable and goes through the same arithmetic,
+# so it needs the same base-10 guard. "018" is invalid octal and would abort
+# the same way COLUMNS did; "010" is *valid* octal and would silently compute
+# against 8 instead of 10, two cells wrong with no error anywhere -- the one
+# the default-margin frame-width sweep would never catch.
+DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=018; COLUMNS=100; dcc_frame_init
+check "a zero-padded margin knows the same width as its unpadded form" \
+  "$DCC_WIDTH_COLS" "82"
+DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=010; COLUMNS=100; dcc_frame_init
+check "a zero-padded valid-octal margin is still read as decimal" \
+  "$DCC_WIDTH_COLS" "90"
+
 finish

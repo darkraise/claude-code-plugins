@@ -50,6 +50,14 @@ close.
 
 ## Width
 
+Fitting only needs a known terminal width; drawing a frame additionally needs
+room for one. The two are separate: whenever `COLUMNS` is a usable number
+larger than the margin, the line fits to it, whether or not a box gets drawn.
+A terminal too narrow for a frame still gets its content shrunk to fit -- it
+just loses the border. Only when `COLUMNS` is missing, non-numeric, or no
+larger than the margin is there truly no width to fit against, and the line
+renders at full size, exactly as it always has.
+
 When a line does not fit, its segments shrink rather than disappearing. The whole
 line steps down one tier at a time until it fits: the path drops its ancestry,
 then elides its middle, then falls back to the leaf; the branch drops its
@@ -78,7 +86,8 @@ the fullest one.
 
 Run `/dcc-statusline preview` to see your own config at five widths side by
 side. A block too narrow to frame is labelled `unframed` rather than given a
-tier: with no frame there is no width budget, and nothing shrinks.
+tier -- but its content still shrinks to the known width, same as a framed
+block; only the border and the tier label are missing.
 
 ## Themes
 

@@ -104,10 +104,22 @@ repository name is bold, the position inside it is plain. At tier 2 the elision
 
 ### Interaction with the frame
 
-Tier selection runs against `DCC_FRAME_BUDGET`, so it applies in framed mode. In
-unframed mode there is no known width — `COLUMNS` was missing or unusable, which
-is why the frame is off — so no budget exists and tier 0 always renders. This
-preserves today's unframed output exactly.
+Tier selection runs against `DCC_FRAME_BUDGET` in every case, but that budget
+means different things depending on why the frame is off. Framing needs room
+for a box; fitting only needs a known width, and the two are tracked
+separately as `DCC_FRAME_ON` and `DCC_WIDTH_COLS`. Unframed mode covers three
+distinct cases:
+
+- `COLUMNS` known but narrower than the framing threshold — the width is
+  known, so `DCC_FRAME_BUDGET` carries it and tier selection escalates exactly
+  as it does in framed mode, minus the border.
+- `frame: none` — likewise a known width with a real budget; the user declined
+  the box, not the fit.
+- `COLUMNS` missing, non-numeric, or no larger than the margin — the width is
+  genuinely unknown or leaves nothing usable, `DCC_FRAME_BUDGET` is `0`, and
+  tier 0 always renders. Only the missing-or-non-numeric case preserves
+  today's unframed output exactly; `COLUMNS` unset is the one path this
+  change guarantees byte-identical.
 
 ### Escape hatch
 

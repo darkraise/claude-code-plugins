@@ -6,14 +6,23 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib.sh"
 PREVIEW="$HERE/../scripts/preview.sh"
 
+# preview.sh builds its sample payload from $PWD and picks up the live git
+# branch, so content assertions below would otherwise depend on where this
+# repo sits on disk and what the branch is called. Run from a short path
+# outside any repository so the rendered widths are the same everywhere.
+tmpcwd="$(mktemp -d)"
+trap 'rm -rf "$tmpcwd"' EXIT
+cd "$tmpcwd" || exit 1
+
 export LC_ALL=C.UTF-8
 export DCC_NOW=1785886800
 
 out="$(bash "$PREVIEW" --config /dev/null 2>&1)"
 check "the default preview shows five widths" \
   "$(printf '%s\n' "$out" | grep -c '^── COLUMNS ')" "5"
-# Four report a tier; COLUMNS=48 is below the framing threshold, so it reports
-# unframed instead -- there is no width budget there and the tier is always 0.
+# Four report a tier; COLUMNS=48 is below the framing threshold, so no box is
+# drawn there and it reports unframed instead -- the width is still known and
+# still fitted, just without a border.
 check "the preview reports the tier where a frame exists" \
   "$(printf '%s\n' "$out" | grep -c 'tier ')" "4"
 check "the preview names the unframed width" \

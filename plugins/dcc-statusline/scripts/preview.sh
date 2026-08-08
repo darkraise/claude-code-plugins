@@ -114,13 +114,15 @@ for w in $DCC_WIDTHS; do
   tiers="$(printf '%s\n' "$out" | sed -n 's/^DCC_TIERS //p')"
   body="$(printf '%s\n' "$out" | sed '/^DCC_TIERS /d')"
 
-  # Below DCC_FRAME_MIN + frameMargin the frame is off, and with no frame there
-  # is no width budget -- so dcc_line_fit never escalates and the tier is always
-  # 0. Printing "tier 0/0" there next to a genuine "tier 3/2" at a wider setting
-  # reads as though the narrow terminal were the roomier one. Say unframed
-  # instead: that, not the tier, is what changed. Framed output is always
-  # exactly 4 lines (top rule, two content rows, bottom rule); unframed is at
-  # most 2, so counting lines tells the two apart without inspecting DCC_FRAME_ON.
+  # Below DCC_FRAME_MIN + frameMargin the frame is off, but the width can still
+  # be known and dcc_line_fit still escalates against it -- only the box itself
+  # is missing. Printing "tier 0/0" there next to a genuine "tier 3/2" at a
+  # wider setting would read as though the narrow terminal were the roomier
+  # one, when really no box was drawn at all. Say unframed instead: that is the
+  # honest reason for the different label, not the tier. Framed output is
+  # always exactly 4 lines (top rule, two content rows, bottom rule); unframed
+  # is at most 2, so counting lines tells the two apart without inspecting
+  # DCC_FRAME_ON.
   if [ "$(printf '%s\n' "$body" | grep -c '')" -ge 4 ]; then
     printf '\n%s COLUMNS %s %s tier %s %s\n' "$DCC_RULE" "$w" "$DCC_RULE" "${tiers:-0/0}" "$DCC_RULE"
   else
