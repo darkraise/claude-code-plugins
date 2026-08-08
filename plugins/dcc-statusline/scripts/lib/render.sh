@@ -117,3 +117,14 @@ dcc_line_build() { # dcc_line_build [max-cells] -> DCC_LINE_OUT, _CELLS, _DROPPE
   done
   DCC_LINE_CELLS="$used"
 }
+
+printf -v DCC_ELLIPSIS '\342\200\246'   # U+2026, one cell
+
+_dcc_trunc() { # _dcc_trunc <text> <maxlen> -> DCC_TRUNC
+  local s="${1:-}" n="${2:-0}"
+  DCC_TRUNC="$s"
+  case "$n" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$n" -gt 0 ] || return 0
+  [ "${#s}" -gt "$n" ] || return 0
+  DCC_TRUNC="${s:0:$n}$DCC_ELLIPSIS"
+}
