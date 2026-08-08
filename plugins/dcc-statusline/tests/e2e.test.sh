@@ -194,5 +194,51 @@ dcc_cells "$top"
 check "a margin of zero draws the full reported width" "$DCC_CELLS" "100"
 rm -f "$cfgm"
 
+# --- frame integrity across widths --------------------------------------------
+# Tier escalation changes how many cells a row occupies, so every width has to
+# be checked, not just the one that happens to fit at tier 0. A row that is one
+# cell wrong leaves a ragged right wall down the entire box.
+DCC_ICON_W=0
+for cols in 52 60 72 88 100 140 200; do
+  out="$(COLUMNS=$cols bash "$SCRIPT" < "$F/full.json")"
+  want=$(( cols - 4 ))   # the default frameMargin
+  check "COLUMNS=$cols prints four rows" \
+    "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "4"
+  rowno=0
+  while IFS= read -r row; do
+    rowno=$(( rowno + 1 ))
+    dcc_cells "$row"
+    check "COLUMNS=$cols row $rowno measures $want cells" "$DCC_CELLS" "$want"
+  done < <(printf '%s\n' "$out")
+done
+
+# The same sweep in nerd mode, where every icon charges two cells rather than
+# one. A tier that forgets to charge for an icon it still emits shows up here
+# and nowhere else.
+DCC_ICON_W=2
+for cols in 52 88 140; do
+  out="$(COLUMNS=$cols DCC_ICONS=nerd bash "$SCRIPT" < "$F/full.json")"
+  want=$(( cols - 4 ))
+  rowno=0
+  while IFS= read -r row; do
+    rowno=$(( rowno + 1 ))
+    dcc_cells "$row"
+    check "nerd COLUMNS=$cols row $rowno measures $want cells" "$DCC_CELLS" "$want"
+  done < <(printf '%s\n' "$out")
+done
+DCC_ICON_W=0
+
+# maxTier 0 must reproduce today's behaviour exactly: no escalation, and the
+# greedy drop doing the fitting.
+cfgt="$(mktemp)"; printf '{ "responsive": { "maxTier": 0 } }' > "$cfgt"
+out="$(DCC_STATUSLINE_CONFIG="$cfgt" COLUMNS=60 bash "$SCRIPT" < "$F/full.json")"
+rowno=0
+while IFS= read -r row; do
+  rowno=$(( rowno + 1 ))
+  dcc_cells "$row"
+  check "maxTier 0 row $rowno still measures 56 cells" "$DCC_CELLS" "56"
+done < <(printf '%s\n' "$out")
+rm -f "$cfgt"
+
 rm -rf "$fakehome"
 finish
