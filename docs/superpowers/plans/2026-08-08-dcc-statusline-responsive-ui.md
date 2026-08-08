@@ -1488,13 +1488,40 @@ and the matching pair in the unframed block:
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 ```
 
-- [ ] **Step 5: Add `time` to the documented segment list**
+- [ ] **Step 5: Add `time` to the segment-dispatch regression loop**
 
-In `plugins/dcc-statusline/tests/segments.test.sh:180`, add `time` to the name list so the "every segment tolerates absent data" loop covers it:
+In `plugins/dcc-statusline/tests/segments.test.sh`, add `time` to the name list:
 
 ```bash
 for name in dir git model effort fast time agent style account ctx cost 5h 7d; do
 ```
+
+That loop currently asserts `rc=0 text=[]` for every name, which `time` cannot
+satisfy. The property the loop actually exists to protect — stated in its own
+header comment — is that an unset `P_*` set does not abort the dispatcher.
+Emptiness is how the payload-driven segments express that; it is not the
+property. `time` has no payload input at all: it reads `DCC_NOW`, so it renders
+whether or not any `P_*` exists.
+
+Asserting a clock value instead would be worse than useless here, because this
+file does not pin `TZ` — the expectation would pass on a UTC machine and fail
+everywhere else. Assert only the return code for `time`:
+
+```bash
+  # Every segment must survive with rc=0. All but one must also render nothing:
+  # `time` has no payload input -- it reads the clock -- so it renders
+  # regardless, and asserting emptiness for it would assert something false
+  # about a segment that is working correctly. Its rendered value is not
+  # asserted here because this file does not pin TZ.
+  case "$name" in
+    time) check "unset P_* does not abort the 'time' segment" \
+            "${result%% text=*}" "rc=0" ;;
+    *)    check "unset P_* leaves the '$name' segment empty, not aborted" \
+            "$result" "rc=0 text=[]" ;;
+  esac
+```
+
+replacing the single `check` line at the foot of the loop body.
 
 - [ ] **Step 6: Run the tests**
 
