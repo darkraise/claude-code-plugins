@@ -10,15 +10,34 @@ set -uo pipefail
 # installed as a plugin the script directory is replaced on every update and is
 # shared read-only across accounts. Resolve a home that works on Linux, macOS,
 # and Windows Git Bash; override the whole location with TELEGRAM_NOTIFY_HOME.
+# Recorded before notify_home() overwrites the variable, so migrate_home() can
+# tell an explicit override from the default.
+TELEGRAM_NOTIFY_HOME_WAS_SET="${TELEGRAM_NOTIFY_HOME:+1}"
 notify_home() {
   if [ -n "${TELEGRAM_NOTIFY_HOME:-}" ]; then printf '%s' "$TELEGRAM_NOTIFY_HOME"; return; fi
   local h="${HOME:-}"
   if [ -z "$h" ] && [ -n "${USERPROFILE:-}" ]; then
     h=$(cygpath -u "$USERPROFILE" 2>/dev/null || printf '%s' "$USERPROFILE")
   fi
-  printf '%s/.telegram-notify' "$h"
+  printf '%s/.dcc-telegram-notify' "$h"
 }
 TELEGRAM_NOTIFY_HOME="$(notify_home)"
+
+# The plugin rename moved this home from ~/.telegram-notify. Carry an existing
+# install over so the token, topic map and state survive an update. Within one
+# user home this is a rename(2) and therefore atomic, so the async hooks racing
+# here are safe: one wins, the loser's mv fails against a target that now exists.
+# Every failure is swallowed -- the worst case is a freshly seeded, silent config.
+migrate_home() {
+  [ -n "$TELEGRAM_NOTIFY_HOME_WAS_SET" ] && return 0
+  [ -e "$TELEGRAM_NOTIFY_HOME" ] && return 0
+  local old="${TELEGRAM_NOTIFY_HOME%/.dcc-telegram-notify}/.telegram-notify"
+  [ -d "$old" ] || return 0
+  mv "$old" "$TELEGRAM_NOTIFY_HOME" 2>/dev/null || true
+  return 0
+}
+migrate_home
+
 CONFIG_FILE="${TELEGRAM_NOTIFY_ENV:-$TELEGRAM_NOTIFY_HOME/telegram.env}"
 STATE_DIR="$TELEGRAM_NOTIFY_HOME/state"
 
