@@ -105,12 +105,12 @@ dcc_main() {
   fi
 
   DCC_SEP="$DCC_SEP1"; dcc_sep_cells "${#DCC_SEP1}"
-  dcc_line_fit "$names1" 0 1
+  dcc_line_fit "$names1" "$DCC_FRAME_BUDGET" 1
   DCC_TIER1="$DCC_LINE_TIER"
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 
   DCC_SEP="$DCC_SEP2"; dcc_sep_cells "${#DCC_SEP2}"
-  dcc_line_fit "$names2" 0 0
+  dcc_line_fit "$names2" "$DCC_FRAME_BUDGET" 0
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 
   [ -n "${DCC_PREVIEW_TIERS:-}" ] && printf 'DCC_TIERS %s/%s\n' "$DCC_TIER1" "$DCC_LINE_TIER"

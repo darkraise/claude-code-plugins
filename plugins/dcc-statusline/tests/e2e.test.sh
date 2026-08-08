@@ -289,5 +289,31 @@ check "an empty array falls back to the default" \
   "$(printf '%s\n' "$out" | sed -n 1p | grep -c '  ·  ')" "1"
 rm -f "$cfgs"
 
+
+# --- narrow terminals fit ------------------------------------------------------
+# Below the framing threshold the width is still known, so the line must shrink
+# to it. Before this was fixed, every width below 52 rendered tier 0 unbounded
+# and the host truncated it -- the responsive feature did nothing precisely
+# where it was needed most.
+DCC_ICON_W=0
+for cols in 40 44 48 50; do
+  out="$(COLUMNS=$cols bash "$SCRIPT" < "$F/full.json")"
+  check "COLUMNS=$cols renders two unframed rows" \
+    "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
+  rowno=0
+  while IFS= read -r row; do
+    rowno=$(( rowno + 1 ))
+    dcc_cells "$row"
+    ok="no"; [ "$DCC_CELLS" -le $(( cols - 4 )) ] && ok="yes"
+    check "COLUMNS=$cols row $rowno fits the budget" "$ok" "yes"
+  done < <(printf '%s\n' "$out")
+done
+
+# An unknown width must still render tier 0 unbounded -- the one path this
+# change must not touch.
+out="$(env -u COLUMNS bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+check "an absent COLUMNS still shows the full path" \
+  "$(printf '%s\n' "$out" | sed -n 1p | grep -c 'Repositories')" "1"
+
 rm -rf "$fakehome"
 finish
