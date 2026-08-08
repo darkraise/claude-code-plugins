@@ -48,6 +48,42 @@ The frame needs to know the terminal width, which Claude Code supplies in
 status line falls back to two unframed lines rather than drawing a box it cannot
 close.
 
+## Width
+
+When a line does not fit, its segments shrink rather than disappearing. The whole
+line steps down one tier at a time until it fits: the path drops its ancestry,
+then elides its middle, then falls back to the leaf; the branch drops its
+counters and then truncates; the model shortens to its first word; the meters
+narrow their bars, drop the token count and reset countdown, and finally show the
+percentage alone.
+
+Tiers are chosen by what fits, not from a width table, so there is nothing to
+tune when a branch name gets longer. Only if the most compact rendering still
+overflows are whole segments dropped, which is the behaviour every width used to
+get.
+
+```json
+{ "responsive": { "maxTier": 0 } }
+```
+
+`maxTier` caps the escalation, and accepts only `0`, `1`, `2`, or `3`; any other
+value — including a negative number or one above `3` — falls back to `3`. Zero
+disables shrinking entirely and restores segment-dropping at every width.
+
+Run `/dcc-statusline preview` to see your own config at five widths side by side.
+
+## Themes
+
+`theme` selects a preset, merged between the built-in defaults and your own file,
+so any key you set yourself still wins.
+
+| Theme | Look |
+|-------|------|
+| `default` | The appearance described above |
+| `minimal` | No frame, no icons, percentages without bars |
+| `mono` | No hue; the three weights carry the hierarchy alone |
+| `vivid` | High contrast, bold throughout |
+
 `COLUMNS` reports the terminal, but the region the host draws the status line
 into can be slightly narrower, and a box drawn to the full width has its right
 wall clipped. So the frame is held back by `frameMargin` cells, four by default:
@@ -91,7 +127,9 @@ defaults.
 | Key | Meaning |
 |-----|---------|
 | `lines` | Two arrays of segment names, in render order |
-| `separator` | String placed between segments |
+| `separator` | String placed between segments, or a two-element array giving each line its own; a shorter array reuses its last element for the missing line, and an empty array falls back to the default |
+| `theme` | `default`, `minimal`, `mono`, or `vivid` |
+| `responsive.maxTier` | Cap on shrinking, `0`–`3`; default `3`; any other value falls back to `3` |
 | `meters.width` | Bar width per meter, keyed `ctx`, `5h`, `7d` |
 | `meters.showEta` | Show the reset countdown |
 | `meters.showTokens` | Show the token count on the context meter |
@@ -104,9 +142,14 @@ defaults.
 | `icons.width` | Cells an icon occupies, `1` or `2`; omit to use detection |
 | `palette` | Section name to colour: `dir`, `git`, `model`, `effort`, `fast`, `cost`, `mute` |
 | `palette.effortLevels` | Colour per reasoning effort: `low`, `medium`, `high`, `xhigh`, `max` |
+| `segments.dir.style` | `full`, `repo`, or `leaf`; pins how the path renders |
+| `segments.git.counters` | Show the ahead/behind/staged counts; default true |
+| `segments.git.maxBranch` | Truncate the branch name; `0` means no limit |
+| `segments.model.short` | Always show the first word of the model name |
+| `segments.ctx.label` | Label text for a meter, likewise `5h` and `7d` |
 
 Segment names: `dir`, `git`, `model`, `effort`, `fast`, `agent`, `style`,
-`account`, `ctx`, `cost`, `5h`, `7d`. Unknown names are ignored.
+`account`, `ctx`, `cost`, `5h`, `7d`, `time`. Unknown names are ignored.
 
 Colors: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`,
 `orange`, `gray`, or a 256-color number.
@@ -159,9 +202,10 @@ so a missing block shortens the line instead of breaking it.
 ## Troubleshooting
 
 Run `/dcc-statusline doctor`. It checks `jq` and `git`, whether the installed copy
-matches the plugin version, whether the config parses, whether the account you are
-running now has a matching `accounts` entry, whether a fixture payload still
-renders, and which accounts have the entry.
+matches the plugin version, whether the config parses **and validates** — naming
+any key whose value is not usable — whether the account you are running now has a
+matching `accounts` entry, whether a fixture payload still renders, and which
+accounts have the entry.
 
 The `accounts` check is the one to read when a tint does not appear: it prints the
 key the plugin resolved for the current `CLAUDE_CONFIG_DIR`, which is what your
