@@ -17,6 +17,7 @@ DCC_THEME=""
 # corners -- so this file stays readable as plain ASCII regardless of the
 # editor or terminal encoding it is opened in.
 printf -v DCC_BOX_H '\342\224\200'   # U+2500
+DCC_RULE="$DCC_BOX_H$DCC_BOX_H"
 
 _dcc_usage() {
   cat <<'TXT'
@@ -78,15 +79,28 @@ JSON
 
 for w in $DCC_WIDTHS; do
   case "$w" in ''|*[!0-9]*) printf 'preview.sh: "%s" is not a width\n' "$w" >&2; exit 2 ;; esac
-  # DCC_PREVIEW_TIERS makes statusline.sh report the tier each line settled on.
-  tiers="$(printf '%s' "$payload" \
+  # One render per width, not two. DCC_PREVIEW_TIERS appends a machine-readable
+  # DCC_TIERS line; it is split off here rather than earned with a second
+  # subprocess render of the same thing.
+  out="$(printf '%s' "$payload" \
     | COLUMNS="$w" DCC_STATUSLINE_CONFIG="$DCC_CFG" DCC_NOW="$now" \
-      DCC_PREVIEW_TIERS=1 bash "$DCC_SRC_DIR/statusline.sh" 2>/dev/null \
-    | sed -n 's/^DCC_TIERS //p')"
-  printf '\n%s COLUMNS %s %s tier %s %s\n' "$DCC_BOX_H$DCC_BOX_H" "$w" "$DCC_BOX_H$DCC_BOX_H" "${tiers:-0/0}" "$DCC_BOX_H$DCC_BOX_H"
-  printf '%s' "$payload" \
-    | COLUMNS="$w" DCC_STATUSLINE_CONFIG="$DCC_CFG" DCC_NOW="$now" \
-      bash "$DCC_SRC_DIR/statusline.sh" 2>/dev/null
+      DCC_PREVIEW_TIERS=1 bash "$DCC_SRC_DIR/statusline.sh" 2>/dev/null)"
+  tiers="$(printf '%s\n' "$out" | sed -n 's/^DCC_TIERS //p')"
+  body="$(printf '%s\n' "$out" | sed '/^DCC_TIERS /d')"
+
+  # Below DCC_FRAME_MIN + frameMargin the frame is off, and with no frame there
+  # is no width budget -- so dcc_line_fit never escalates and the tier is always
+  # 0. Printing "tier 0/0" there next to a genuine "tier 3/2" at a wider setting
+  # reads as though the narrow terminal were the roomier one. Say unframed
+  # instead: that, not the tier, is what changed. Framed output is always
+  # exactly 4 lines (top rule, two content rows, bottom rule); unframed is at
+  # most 2, so counting lines tells the two apart without inspecting DCC_FRAME_ON.
+  if [ "$(printf '%s\n' "$body" | grep -c '')" -ge 4 ]; then
+    printf '\n%s COLUMNS %s %s tier %s %s\n' "$DCC_RULE" "$w" "$DCC_RULE" "${tiers:-0/0}" "$DCC_RULE"
+  else
+    printf '\n%s COLUMNS %s %s unframed %s\n' "$DCC_RULE" "$w" "$DCC_RULE" "$DCC_RULE"
+  fi
+  printf '%s\n' "$body"
 done
 printf '\n'
 

@@ -12,10 +12,16 @@ export DCC_NOW=1785886800
 out="$(bash "$PREVIEW" --config /dev/null 2>&1)"
 check "the default preview shows five widths" \
   "$(printf '%s\n' "$out" | grep -c '^── COLUMNS ')" "5"
-check "the preview reports the tier each line chose" \
-  "$(printf '%s\n' "$out" | grep -c 'tier ')" "5"
-check "the preview renders the probe model" \
-  "$(printf '%s' "$out" | strip_ansi | grep -c 'Opus')" "1"
+# Four report a tier; COLUMNS=48 is below the framing threshold, so it reports
+# unframed instead -- there is no width budget there and the tier is always 0.
+check "the preview reports the tier where a frame exists" \
+  "$(printf '%s\n' "$out" | grep -c 'tier ')" "4"
+check "the preview names the unframed width" \
+  "$(printf '%s\n' "$out" | grep -c 'unframed')" "1"
+# grep -c counts matching LINES, and the model appears on one line of every
+# block, so this is five and not one.
+check "the preview renders the probe model at every width" \
+  "$(printf '%s' "$out" | strip_ansi | grep -c 'Opus')" "5"
 
 out="$(bash "$PREVIEW" --config /dev/null --width 100 2>&1)"
 check "--width renders exactly one block" \
