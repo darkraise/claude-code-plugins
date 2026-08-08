@@ -133,6 +133,21 @@ check "a width-2 meter drops its bar at tier 2" "$(segt ctx 2)" "ctx 47%"
 check "a width-2 meter keeps its bar at tier 0" "$(segt ctx 0)" "ctx #. 47% · 94k"
 DCC_W_CTX=10
 
+# A meter narrower than two cells drops its bar at every tier, tier 0 included.
+# This is a deliberate exception to the tier-0 byte-identity rule: width 1 used
+# to render one empty cell, which dcc_bar's "never look full below 100%" clamp
+# leaves empty at any reading under 100 -- so it read as 0% at 47%. Width 0 used
+# to render a doubled space. The minimal theme sets width 0 on purpose. The
+# token suffix is governed only by tier, not by the bar-width clamp, and
+# P_CTX_TOK is still set from above, so it still renders here -- its presence
+# confirms there is exactly one space before the percentage, not two.
+DCC_W_CTX=1
+check "a width-1 meter drops its bar at tier 0" "$(segt ctx 0)" "ctx 47% · 94k"
+DCC_W_CTX=0
+check "a width-0 meter has no doubled space at tier 0" "$(segt ctx 0)" "ctx 47% · 94k"
+DCC_W_CTX=10
+check "the default width is unaffected at tier 0" "$(segt ctx 0)" "ctx #####..... 47% · 94k"
+
 # --- monotonic shrink, every shrinking segment --------------------------------
 DCC_GIT_BRANCH="feature/responsive-tiers"
 P_5H_PCT=23; P_5H_RESET=1785900000
