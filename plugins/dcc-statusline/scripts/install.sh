@@ -15,6 +15,7 @@ DCC_COMMAND="bash ~/.claude/dcc-statusline/statusline.sh"
 source "$DCC_SRC_DIR/lib/path.sh"
 source "$DCC_SRC_DIR/lib/jq-prog.sh"
 source "$DCC_SRC_DIR/lib/config.sh"
+source "$DCC_SRC_DIR/lib/validate.sh"
 
 _dcc_paths() { # -> DCC_HOME_DIR, DCC_DEST -- resolved fresh on every call, never
                # cached at source time, because a caller (tests, in particular)
@@ -80,6 +81,7 @@ dcc_seed_config() { # seeds only what is genuinely per-machine -- everything
   mkdir -p "$DCC_HOME_DIR/.claude" || return 0
   cat > "$cfg" <<'JSON'
 {
+  "$schema": "./dcc-statusline/dcc-statusline.schema.json",
   "accounts": {}
 }
 JSON
@@ -122,15 +124,7 @@ dcc_doctor() {
   else
     printf 'icons: not detected yet -- run install to probe\n'
   fi
-  if [ -f "$cfg" ]; then
-    if jq -e . "$cfg" >/dev/null 2>&1; then
-      printf 'ok   - config parses\n'
-    else
-      printf 'FAIL - config is not valid JSON\n'; rc=1
-    fi
-  else
-    printf 'ok   - no config file; built-in defaults apply\n'
-  fi
+  if dcc_validate "$cfg"; then :; else rc=1; fi
 
   # Whether the active account has a matching accounts{} entry. A key that never
   # matches costs the tint and nothing else, so it produces no error anywhere --

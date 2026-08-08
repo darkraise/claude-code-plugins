@@ -234,4 +234,43 @@ check "a version change re-runs detection" \
 rm -rf "$fake"
 unset DCC_FAKE_HOME
 
+# --- schema and validation ----------------------------------------------------
+# The schema sits under scripts/ so dcc_copy_scripts carries it to an installed
+# copy; a file at the plugin root would never be copied, and the installed
+# validate.sh would find no schema to read its name lists from.
+SCHEMA="$HERE/../scripts/dcc-statusline.schema.json"
+check "the schema file exists" "$([ -f "$SCHEMA" ] && echo yes || echo no)" "yes"
+check "the schema is valid JSON" \
+  "$(jq -e . "$SCHEMA" >/dev/null 2>&1 && echo yes || echo no)" "yes"
+check "the schema declares every top-level key" \
+  "$(jq -r '.properties | keys | length' "$SCHEMA")" "13"
+
+# An install must carry the schema across, or the installed validate.sh silently
+# stops checking key, segment and theme names.
+cphome="$(mktemp -d)"
+DCC_FAKE_HOME="$cphome" DCC_STATUSLINE_HOME="$cphome/dest" dcc_copy_scripts
+check "install copies the schema to the destination" \
+  "$([ -f "$cphome/dest/dcc-statusline.schema.json" ] && echo yes || echo no)" "yes"
+rm -rf "$cphome"
+
+# A seeded config points at the schema so editors validate while typing.
+seedhome="$(mktemp -d)"
+mkdir -p "$seedhome/.claude"
+DCC_FAKE_HOME="$seedhome" dcc_seed_config
+check "a seeded config declares \$schema" \
+  "$(jq -r '."$schema" // empty' "$seedhome/.claude/dcc-statusline.json" | grep -c 'dcc-statusline.schema.json')" "1"
+check "a seeded config still has an accounts map" \
+  "$(jq -r '.accounts | type' "$seedhome/.claude/dcc-statusline.json")" "object"
+check "a seeded config validates" \
+  "$(dcc_validate "$seedhome/.claude/dcc-statusline.json" | grep -c '^FAIL')" "0"
+rm -rf "$seedhome"
+
+# doctor names the offending key rather than only reporting that parsing failed.
+dochome="$(mktemp -d)"
+mkdir -p "$dochome/.claude"
+printf '{ "theme": "nonesuch" }' > "$dochome/.claude/dcc-statusline.json"
+out="$(DCC_FAKE_HOME="$dochome" dcc_doctor 2>&1)"
+check "doctor names an unknown theme" "$(printf '%s' "$out" | grep -c 'nonesuch')" "1"
+rm -rf "$dochome"
+
 finish
