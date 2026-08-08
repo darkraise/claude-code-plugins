@@ -7,8 +7,11 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT="$HERE/../scripts/telegram-notify.sh"
+SCRIPT="$HERE/../scripts/dcc-telegram-notify.sh"
 
+# Never touch the real config home: Task 2 adds a load-time migration that would
+# otherwise move this machine's actual ~/.dcc-telegram-notify during a test run.
+export TELEGRAM_NOTIFY_HOME="$(mktemp -d)"
 export TELEGRAM_NOTIFY_ENV="$(mktemp -u)"   # isolate from the real config/token
 # shellcheck disable=SC1090
 source "$SCRIPT"

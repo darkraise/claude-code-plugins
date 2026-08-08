@@ -25,7 +25,7 @@ GitHub repository is `darkraise/claude-code-plugins`.
 | ------ | ----------- |
 | `dcc-statusline` | A status line with an account-colored frame, semantic per-section colour, and context and rate-limit meters. Built for machines running several Claude accounts side by side. |
 | `dcc-superpower-companions` | Extends superpowers with 16 model and effort tiered implementer subagents. Scores every plan task, records the assigned implementer in the plan, and dispatches it with a defined escalation ladder. |
-| `telegram-notify` | Telegram push notifications when a session finishes a turn, ends on a question, or needs your attention. Cross-platform, multi-account aware, optional LLM summaries. |
+| `dcc-telegram-notify` | Telegram push notifications when a session finishes a turn, ends on a question, or needs your attention. Cross-platform, multi-account aware, optional LLM summaries. |
 
 `dcc-statusline` needs one extra step after installing. A plugin's own
 `settings.json` supports only the `agent` and `subagentStatusLine` keys, so no
@@ -48,7 +48,7 @@ once per machine to write that entry into your own settings.
    ```
 
 2. Pick a starting point from an existing plugin if it helps: `dcc-statusline`
-   for scripts, hooks and a slash command; `telegram-notify` for hooks and
+   for scripts, hooks and a slash command; `dcc-telegram-notify` for hooks and
    configuration; `dcc-superpower-companions` for agents.
 3. Add components under the plugin directory. Claude Code auto-discovers the standard
    directories: `commands/` for slash commands, `skills/<name>/SKILL.md` for skills,

@@ -4,21 +4,43 @@
 #   --discover: lists chats/topics the bot can see, to find your IDs
 #   --test:     sends a test message to the configured destination
 #   --edit:     opens the config file in your default editor
+#   --events:   prints which notifications are enabled, and any unknown tokens
 set -uo pipefail
 
 # Config and mutable state live in a stable per-user home, NOT beside the script:
 # installed as a plugin the script directory is replaced on every update and is
 # shared read-only across accounts. Resolve a home that works on Linux, macOS,
 # and Windows Git Bash; override the whole location with TELEGRAM_NOTIFY_HOME.
+# Recorded before notify_home() overwrites the variable, so migrate_home() can
+# tell an explicit override from the default.
+TELEGRAM_NOTIFY_HOME_WAS_SET="${TELEGRAM_NOTIFY_HOME:+1}"
 notify_home() {
   if [ -n "${TELEGRAM_NOTIFY_HOME:-}" ]; then printf '%s' "$TELEGRAM_NOTIFY_HOME"; return; fi
   local h="${HOME:-}"
   if [ -z "$h" ] && [ -n "${USERPROFILE:-}" ]; then
     h=$(cygpath -u "$USERPROFILE" 2>/dev/null || printf '%s' "$USERPROFILE")
   fi
-  printf '%s/.telegram-notify' "$h"
+  printf '%s/.dcc-telegram-notify' "$h"
 }
 TELEGRAM_NOTIFY_HOME="$(notify_home)"
+
+# The plugin rename moved this home from ~/.telegram-notify. Carry an existing
+# install over so the token, topic map and state survive an update. Within one
+# user home this is a rename(2) and therefore atomic, so the async hooks racing
+# here are safe: one wins, and rename(2) removes the source directory entry as
+# part of that same atomic step, so the loser's mv fails with ENOENT on the
+# now-vanished source.
+# Every failure is swallowed -- the worst case is a freshly seeded, silent config.
+migrate_home() {
+  [ -n "$TELEGRAM_NOTIFY_HOME_WAS_SET" ] && return 0
+  [ -e "$TELEGRAM_NOTIFY_HOME" ] && return 0
+  local old="${TELEGRAM_NOTIFY_HOME%/.dcc-telegram-notify}/.telegram-notify"
+  [ -d "$old" ] || return 0
+  mv "$old" "$TELEGRAM_NOTIFY_HOME" 2>/dev/null || true
+  return 0
+}
+migrate_home
+
 CONFIG_FILE="${TELEGRAM_NOTIFY_ENV:-$TELEGRAM_NOTIFY_HOME/telegram.env}"
 STATE_DIR="$TELEGRAM_NOTIFY_HOME/state"
 
@@ -30,14 +52,14 @@ seed_config() {
   [ -n "${TELEGRAM_NOTIFY_ENV:-}" ] && return 0
   [ -f "$CONFIG_FILE" ] && return 0
   cat > "$CONFIG_FILE" 2>/dev/null <<'EOF'
-# Telegram notification config for the Claude Code telegram-notify plugin.
+# Telegram notification config for the Claude Code dcc-telegram-notify plugin.
 # Keep this file private -- it holds your bot token.
 
 # From @BotFather, looks like 123456789:AAE...  (required; empty = notifications off)
 TELEGRAM_BOT_TOKEN=
 
 # Target chat id. Supergroups are negative, e.g. -1001234567890
-# Find it with the /telegram-notify command, or:  telegram-notify.sh --discover
+# Find it with the /dcc-telegram-notify command, or:  dcc-telegram-notify.sh --discover
 TELEGRAM_CHAT_ID=
 
 # Forum topic ("channel") id inside the group. Empty posts to the main thread.
@@ -47,6 +69,17 @@ TELEGRAM_TOPIC_ID=
 # repo auto-creates its own topic; non-repos use the shared topic). per-project
 # needs the bot to be a group ADMIN with the Manage Topics right.
 TELEGRAM_TOPIC_MODE=shared
+
+# --- Which events notify you -------------------------------------------------
+# Comma-separated list. Tokens:
+#   permission     a tool call is waiting for your approval
+#   input          a question is waiting, or an agent asked for input
+#   stop-question  the turn ended on a question
+#   stop-done      a work turn finished
+#   stop-reply     a conversational turn finished
+# Aliases: stop (all three stop-*), all, none. Unknown tokens are ignored.
+# The default is everything that leaves the session blocked on you.
+TELEGRAM_EVENTS=permission,input,stop-question
 
 # --- Optional LLM turn summaries (OFF by default) ----------------------------
 # Leave TELEGRAM_LLM_URL empty to disable. Set it to an OpenAI-compatible base
@@ -84,6 +117,46 @@ seed_config
 # each git repo gets its own auto-created topic; non-repos use TELEGRAM_TOPIC_ID.
 : "${TELEGRAM_TOPIC_MODE:=shared}"
 : "${TELEGRAM_TOPIC_MAP:=$TELEGRAM_NOTIFY_HOME/topics.json}"
+
+# Which notifications are allowed to send. Comma- or space-separated tokens:
+#   permission    a tool call is waiting for approval
+#   input         a question is waiting, or an agent asked for input
+#   stop-question the turn ended on a question
+#   stop-done     a work turn finished
+#   stop-reply    a conversational turn finished
+# Aliases: stop = the three stop-* tokens, all = everything, none = nothing.
+# Unset gets the default below; set-but-empty means nothing, same as none.
+TELEGRAM_EVENTS_RESOLVED=" "
+TELEGRAM_EVENTS_UNKNOWN=""
+parse_events() {
+  local raw tok out="" unknown=""
+  if [ "${TELEGRAM_EVENTS+set}" = "set" ]; then raw="$TELEGRAM_EVENTS"
+  else raw="permission,input,stop-question"; fi
+  raw=$(printf '%s' "$raw" | tr 'A-Z,' 'a-z ')
+  for tok in $raw; do
+    case "$tok" in
+      permission|input|stop-question|stop-done|stop-reply) out="$out$tok " ;;
+      stop) out="${out}stop-question stop-done stop-reply " ;;
+      all)  out="${out}permission input stop-question stop-done stop-reply " ;;
+      none) out=""; break ;;
+      # A typo must never break notifications, so it is dropped and reported
+      # rather than raised. `status` surfaces whatever landed here.
+      *)    unknown="$unknown$tok " ;;
+    esac
+  done
+  # shellcheck disable=SC2086 -- deliberate word splitting to dedupe the set
+  [ -n "$out" ] && out=$(printf '%s\n' $out | LC_ALL=C sort -u | tr '\n' ' ')
+  TELEGRAM_EVENTS_RESOLVED=" $out"
+  TELEGRAM_EVENTS_UNKNOWN="${unknown% }"
+}
+parse_events
+
+event_enabled() {
+  case "$TELEGRAM_EVENTS_RESOLVED" in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+
+events_list() { local l="${TELEGRAM_EVENTS_RESOLVED# }"; printf '%s' "${l% }"; }
+
 # Machine label in the header, so you can tell which host needs attention.
 # Defaults to this machine's hostname; set a friendly name to override.
 : "${TELEGRAM_MACHINE_NAME:=$(hostname 2>/dev/null)}"
@@ -124,7 +197,7 @@ REPO_KEY=""; REPO_NAME=""; SEND_TOPIC=""
 TELEGRAM_DEBUG_LOG="${TELEGRAM_DEBUG_LOG:-$TELEGRAM_NOTIFY_HOME/debug.log}"
 dbg() { [ "${TELEGRAM_DEBUG:-0}" = "1" ] && printf '%s [pid %s] | %s\n' "$(date -u +%FT%T.%3NZ)" "$$" "$*" >> "$TELEGRAM_DEBUG_LOG" 2>/dev/null; return 0; }
 
-die() { echo "telegram-notify: $*" >&2; exit 1; }
+die() { echo "dcc-telegram-notify: $*" >&2; exit 1; }
 
 html_escape() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 
@@ -441,6 +514,7 @@ main() {
   project=$(basename "${cwd:-$PWD}")
 
   dbg "── EVENT=$event session=${session:0:8} pid=$$"
+  dbg "   events=[$(events_list)]${TELEGRAM_EVENTS_UNKNOWN:+ unknown=[$TELEGRAM_EVENTS_UNKNOWN]}"
 
   # Route to a per-project topic when enabled and the cwd is a git repo; a
   # non-repo, a create failure, or a deleted topic all fall back to the shared
@@ -472,7 +546,7 @@ main() {
       ;;
 
     Notification)
-      local ntype transcript status body action tool sidechain q opts n target
+      local ntype transcript status body action tool sidechain q opts n target gate
       ntype=$(jq -r '.notification_type // ""' <<<"$payload" 2>/dev/null)
       transcript=$(jq -r '.transcript_path // ""' <<<"$payload" 2>/dev/null)
       if [ "$ntype" = "permission_prompt" ]; then
@@ -481,40 +555,51 @@ main() {
         sidechain=$(jq -r '.sidechain // false' <<<"$action" 2>/dev/null)
         if [ "$tool" = "AskUserQuestion" ]; then
           # A question is waiting, not a tool to approve — present it as one.
-          status="❓ Needs your input"
+          status="❓ Needs your input"; gate=input
           q=$(jq -r '.question // ""' <<<"$action" 2>/dev/null)
           opts=$(jq -r '(.options // []) | join(" / ")' <<<"$action" 2>/dev/null)
           body="$q"
           [ -n "$opts" ] && body="$q"$'\n\n'"Options: $opts"
         elif [ -n "$tool" ]; then
-          status="🔐 Needs permission"
+          status="🔐 Needs permission"; gate=permission
           n=$(jq -r '.n // 1' <<<"$action" 2>/dev/null)
           target=$(jq -r '.target // ""' <<<"$action" 2>/dev/null)
           body="▸ $tool"
           [ -n "$target" ] && body="▸ $tool: $target"
           [ "${n:-1}" -gt 1 ] 2>/dev/null && body="$body (+$((n - 1)) more)"
         else
-          status="🔐 Needs permission"
+          status="🔐 Needs permission"; gate=permission
           body=$(jq -r '.message // "Claude is waiting for your approval."' <<<"$payload" 2>/dev/null)
         fi
         # Mark subagent-issued prompts so they are distinct from the main session.
         [ "$sidechain" = "true" ] && header="$header ⤷ <i>subagent</i>"
       else
-        status="🔔 Needs you"
+        status="🔔 Needs you"; gate=input
         body=$(jq -r '.message // "Claude is waiting for you."' <<<"$payload" 2>/dev/null)
       fi
+      event_enabled "$gate" || { dbg "   muted: $gate not in TELEGRAM_EVENTS [$(events_list)]"; exit 0; }
       send_message "$header" "$status" "$body"
       ;;
 
     Stop)
-      local transcript full kind status body duration="" turn_start="" now
-      transcript=$(jq -r '.transcript_path // ""' <<<"$payload" 2>/dev/null)
-
+      local transcript full kind status body duration="" turn_start="" now gate
+      # Consume the turn timer before any early exit, or muted sessions leave
+      # start files behind forever.
       if [ -r "$start_file" ]; then
         turn_start=$(cat "$start_file")
         [[ "$turn_start" =~ ^[0-9]+$ ]] || turn_start=""
         rm -f "$start_file"
       fi
+
+      # With every turn-end token off there is nothing this branch can produce,
+      # so skip before the transcript read and the LLM classify call.
+      if ! event_enabled stop-question && ! event_enabled stop-done \
+         && ! event_enabled stop-reply; then
+        dbg "   muted: no stop-* token in TELEGRAM_EVENTS [$(events_list)]"
+        exit 0
+      fi
+
+      transcript=$(jq -r '.transcript_path // ""' <<<"$payload" 2>/dev/null)
 
       # Primary source: the last_assistant_message field Claude Code puts in the
       # Stop payload. It is the authoritative in-memory final message, immune to
@@ -554,10 +639,11 @@ main() {
       fi
 
       case "$kind" in
-        question) status="❓ Waiting on you" ;;
-        reply)    status="💬 Replied" ;;
-        *)        status="✅ Done" ;;
+        question) status="❓ Waiting on you"; gate=stop-question ;;
+        reply)    status="💬 Replied";        gate=stop-reply ;;
+        *)        status="✅ Done";           gate=stop-done ;;
       esac
+      event_enabled "$gate" || { dbg "   muted: $gate not in TELEGRAM_EVENTS [$(events_list)]"; exit 0; }
 
       if [ -n "$turn_start" ]; then
         now=$(date +%s)
@@ -639,7 +725,12 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
         die "Telegram rejected it: $(jq -r '.description // "unknown"' <<<"$resp")"
       fi
       ;;
+    --events)
+      printf 'enabled: %s\n' "$(events_list)"
+      { [ -n "$TELEGRAM_EVENTS_UNKNOWN" ] && \
+        printf 'ignored (not valid tokens): %s\n' "$TELEGRAM_EVENTS_UNKNOWN"; } || true
+      ;;
     "") main ;;
-    *) die "unknown option: $1 (use --discover, --test, --edit, or pipe hook JSON on stdin)" ;;
+    *) die "unknown option: $1 (use --discover, --test, --edit, --events, or pipe hook JSON on stdin)" ;;
   esac
 fi

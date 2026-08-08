@@ -9,8 +9,8 @@
   },
   "plugins": [
     {
-      "name": "telegram-notify",
-      "source": "./plugins/telegram-notify",
+      "name": "dcc-telegram-notify",
+      "source": "./plugins/dcc-telegram-notify",
       "description": "Push a Telegram message when a Claude Code session finishes a turn, ends on a question, or needs your attention. Cross-platform, multi-account aware, optional LLM summaries.",
       "category": "productivity",
       "keywords": ["telegram", "notifications", "hooks", "push", "mobile"]
