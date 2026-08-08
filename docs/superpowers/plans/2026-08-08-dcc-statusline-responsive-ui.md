@@ -2034,10 +2034,16 @@ export DCC_NOW=1785886800
 out="$(bash "$PREVIEW" --config /dev/null 2>&1)"
 check "the default preview shows five widths" \
   "$(printf '%s\n' "$out" | grep -c '^── COLUMNS ')" "5"
-check "the preview reports the tier each line chose" \
-  "$(printf '%s\n' "$out" | grep -c 'tier ')" "5"
-check "the preview renders the probe model" \
-  "$(printf '%s' "$out" | strip_ansi | grep -c 'Opus')" "1"
+# Four report a tier; COLUMNS=48 is below the framing threshold, so it reports
+# unframed instead -- there is no width budget there and the tier is always 0.
+check "the preview reports the tier where a frame exists" \
+  "$(printf '%s\n' "$out" | grep -c 'tier ')" "4"
+check "the preview names the unframed width" \
+  "$(printf '%s\n' "$out" | grep -c 'unframed')" "1"
+# grep -c counts matching LINES, and the model appears on one line of every
+# block, so this is five and not one.
+check "the preview renders the probe model at every width" \
+  "$(printf '%s' "$out" | strip_ansi | grep -c 'Opus')" "5"
 
 out="$(bash "$PREVIEW" --config /dev/null --width 100 2>&1)"
 check "--width renders exactly one block" \
@@ -2139,17 +2145,30 @@ payload="$(cat <<JSON
 JSON
 )"
 
+printf -v RULE '\342\224\200\342\224\200'   # U+2500 twice; ASCII source only
+
 for w in $DCC_WIDTHS; do
   case "$w" in ''|*[!0-9]*) printf 'preview.sh: "%s" is not a width\n' "$w" >&2; exit 2 ;; esac
-  # DCC_PREVIEW_TIERS makes statusline.sh report the tier each line settled on.
-  tiers="$(printf '%s' "$payload" \
+  # One render per width, not two. DCC_PREVIEW_TIERS appends a machine-readable
+  # DCC_TIERS line; it is split off here rather than earned with a second
+  # subprocess render of the same thing.
+  out="$(printf '%s' "$payload" \
     | COLUMNS="$w" DCC_STATUSLINE_CONFIG="$DCC_CFG" DCC_NOW="$now" \
-      DCC_PREVIEW_TIERS=1 bash "$DCC_SRC_DIR/statusline.sh" 2>/dev/null \
-    | sed -n 's/^DCC_TIERS //p')"
-  printf '\n── COLUMNS %s ── tier %s ──\n' "$w" "${tiers:-0/0}"
-  printf '%s' "$payload" \
-    | COLUMNS="$w" DCC_STATUSLINE_CONFIG="$DCC_CFG" DCC_NOW="$now" \
-      bash "$DCC_SRC_DIR/statusline.sh" 2>/dev/null
+      DCC_PREVIEW_TIERS=1 bash "$DCC_SRC_DIR/statusline.sh" 2>/dev/null)"
+  tiers="$(printf '%s\n' "$out" | sed -n 's/^DCC_TIERS //p')"
+  body="$(printf '%s\n' "$out" | sed '/^DCC_TIERS /d')"
+
+  # Below DCC_FRAME_MIN + frameMargin the frame is off, and with no frame there
+  # is no width budget -- so dcc_line_fit never escalates and the tier is always
+  # 0. Printing "tier 0/0" there next to a genuine "tier 3/2" at a wider setting
+  # reads as though the narrow terminal were the roomier one. Say unframed
+  # instead: that, not the tier, is what changed.
+  if [ "$(printf '%s\n' "$body" | grep -c '')" -ge 4 ]; then
+    printf '\n%s COLUMNS %s %s tier %s %s\n' "$RULE" "$w" "$RULE" "${tiers:-0/0}" "$RULE"
+  else
+    printf '\n%s COLUMNS %s %s unframed %s\n' "$RULE" "$w" "$RULE" "$RULE"
+  fi
+  printf '%s\n' "$body"
 done
 printf '\n'
 
@@ -2469,7 +2488,7 @@ Expected: `claude plugin validate .` reports no errors; the suite reports `0 fai
 bash plugins/dcc-statusline/scripts/preview.sh --config /dev/null
 ```
 
-Expected: five blocks. Confirm by looking that the 48-column block has a closed box with an unbroken right wall, and that its content is visibly more compact than the 200-column block. This is the one check the test suite cannot make for you — the tests assert cell counts, not that the result reads well.
+Expected: five blocks. Confirm by looking that the 60-column block has a closed box with an unbroken right wall and is visibly more compact than the 200-column block, and that the 48-column block is labelled `unframed` — it falls below `DCC_FRAME_MIN` plus the margin, which is the fallback worth seeing in a preview. This is the one check the test suite cannot make for you: the tests assert counts and labels, not that the result reads well.
 
 - [ ] **Step 6: Commit**
 
