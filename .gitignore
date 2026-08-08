@@ -10,3 +10,7 @@ Thumbs.db
 # Node (from CI / npx)
 node_modules/
 npm-debug.log*
+
+# Superpowers agent scratch (ledgers, briefs, review packages)
+.superpowers/
+.worktrees/
