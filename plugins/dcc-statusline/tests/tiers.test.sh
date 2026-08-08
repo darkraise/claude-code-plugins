@@ -231,6 +231,14 @@ dcc_line_fit "model" 200 0
 check "an oversized maxTier falls back to 3" "$DCC_LINE_TIER" "0"
 check "an oversized maxTier still renders this call" \
   "$(printf '%s' "$DCC_LINE_OUT" | strip_ansi)" "Opus 4.8"
+
+# The wide budget above fits at tier 0 whichever way the fallback goes, so only
+# a budget too tight for tier 0 can tell falling back to 3 from falling back to
+# 0 -- which would pin the render and quietly restore greedy dropping.
+DCC_GIT_BRANCH="$(printf 'x%.0s' $(seq 1 300))"
+dcc_line_fit "dir git model" 30 0
+check "an oversized maxTier still escalates to tier 3" "$DCC_LINE_TIER" "3"
+DCC_GIT_BRANCH="main"
 DCC_MAX_TIER=3
 
 # The bad-config marker survives re-rendering.
