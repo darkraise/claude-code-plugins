@@ -188,7 +188,17 @@ for name in dir git model effort fast time agent style account ctx cost 5h 7d; d
       printf 'rc=%d text=[%s]' "$?" "$DCC_SEG_OUT"
     } 2>&1
   )
-  check "unset P_* leaves the '$name' segment empty, not aborted" "$result" "rc=0 text=[]"
+  # Every segment must survive with rc=0. All but one must also render nothing:
+  # `time` has no payload input -- it reads the clock -- so it renders
+  # regardless, and asserting emptiness for it would assert something false
+  # about a segment that is working correctly. Its rendered value is not
+  # asserted here because this file does not pin TZ.
+  case "$name" in
+    time) check "unset P_* does not abort the 'time' segment" \
+            "${result%% text=*}" "rc=0" ;;
+    *)    check "unset P_* leaves the '$name' segment empty, not aborted" \
+            "$result" "rc=0 text=[]" ;;
+  esac
 done
 
 # --- weights ------------------------------------------------------------------
