@@ -29,10 +29,14 @@ source "$DCC_DIR/lib/segments.sh"
 _dcc_strip_account() { # _dcc_strip_account <names> -> DCC_NAMES
   local name out=""
   DCC_NAMES=""
+  # Glob off across the unquoted split: a configured name like "*" would
+  # otherwise expand to the working directory's filenames.
+  set -f
   for name in $1; do
     [ "$name" = "account" ] && continue
     out="$out $name"
   done
+  set +f
   DCC_NAMES="${out# }"
 }
 

@@ -65,6 +65,19 @@ check "a malformed config renders with a marker" \
   "$(printf '%s' "$out" | grep -c 'cfg?')" "1"
 rm -f "$badcfg"
 
+# A glob as a segment name must stay a literal unknown name. Unquoted, the
+# name loops would expand "*" against the working directory, and a file named
+# after a segment would render one the user never configured. The directory
+# plants exactly that trap: a file named "time".
+cfgg="$(mktemp)"; printf '{ "lines": [["*"],["cost"]], "frame": "none" }' > "$cfgg"
+globdir="$(mktemp -d)"; touch "$globdir/time"
+out="$(cd "$globdir" && DCC_STATUSLINE_CONFIG="$cfgg" bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
+check "a glob segment name renders nothing" \
+  "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "1"
+check "the remaining line is the cost chip alone" \
+  "$(printf '%s\n' "$out" | sed -n 1p)" "\$1.20"
+rm -f "$cfgg"; rm -rf "$globdir"
+
 # Tint and ramp coexist: the ramp paints the meters regardless of mode, while
 # which element carries the account tint depends on whether the frame is on --
 # framed mode puts it on the top rule, unframed mode puts it on the account

@@ -251,10 +251,16 @@ DCC_LINE_TIER=0
 _dcc_render_line() { # _dcc_render_line <names> <tier> <mark-bad-config>
   local name
   dcc_line_reset
+  # Glob off across the unquoted split: a configured segment name like "*"
+  # would otherwise iterate the working directory's filenames, and an unlucky
+  # filename would render a segment the user never configured. Nothing on the
+  # render path expands a pattern, so the loop body is safe to cover too.
+  set -f
   for name in $1; do
     dcc_segment "$name" "$2"
     dcc_line_push
   done
+  set +f
   if [ "${3:-0}" -eq 1 ] && [ "${DCC_CONFIG_BAD:-0}" -eq 1 ]; then
     dcc_seg_add "cfg?" red bold
     dcc_line_push
