@@ -41,6 +41,59 @@ DCC_DEFAULT_CONFIG='{
   "glyphs": {"filled":"\u25b0","empty":"\u25b1","dirty":"*"}
 }'
 
+# Themes are partial configs merged between the defaults and the user's own
+# file, so selecting one never makes a setting unreachable. Kept here rather
+# than in separate files because the render path reads them inside the single
+# jq call and cannot afford another file open.
+DCC_THEMES='{
+  "default": {},
+  "minimal": {
+    "frame": "none",
+    "icons": { "mode": "unicode" },
+    "lines": [["dir","git","model"],["ctx","cost"]],
+    "meters": {
+      "width": { "ctx": 0, "5h": 0, "7d": 0 },
+      "showEta": false,
+      "showTokens": false
+    }
+  },
+  "mono": {
+    "palette": {
+      "dir": "white", "git": "white", "model": "white",
+      "effort": "gray", "fast": "white", "cost": "white", "mute": "gray",
+      "effortLevels": {
+        "low": "gray", "medium": "gray", "high": "white",
+        "xhigh": "white", "max": "white"
+      }
+    },
+    "meters": {
+      "ramp": [
+        {"at":0,"color":"gray"},
+        {"at":75,"color":"white"},
+        {"at":90,"color":"white","bold":true}
+      ]
+    }
+  },
+  "vivid": {
+    "palette": {
+      "dir": "cyan", "git": "magenta", "model": "green",
+      "effort": "yellow", "fast": "yellow", "cost": "magenta", "mute": "white",
+      "effortLevels": {
+        "low": "gray", "medium": "cyan", "high": "green",
+        "xhigh": "yellow", "max": "magenta"
+      }
+    },
+    "meters": {
+      "ramp": [
+        {"at":0,"color":"green","bold":true},
+        {"at":50,"color":"yellow","bold":true},
+        {"at":75,"color":"orange","bold":true},
+        {"at":90,"color":"red","bold":true}
+      ]
+    }
+  }
+}'
+
 # jq emits shell assignments. @sh quotes every interpolation, so a directory or
 # email containing quotes cannot escape into the eval.
 #
@@ -53,7 +106,9 @@ DCC_DEFAULT_CONFIG='{
 # `.rate_limits.five_hour` against an array still aborts.
 DCC_JQ_PROG='
 . as $p
-| (if ($cfg|length) > 0 then ($d * $cfg[0]) else $d end) as $c
+| (if ($cfg|length) > 0 then $cfg[0] else {} end) as $u
+| (if ($u.theme|type) == "string" then ($themes[$u.theme] // {}) else {} end) as $t
+| ($d * $t * $u) as $c
 | def num($v; $dflt): if ($v|type) == "number" then ($v|floor) else $dflt end;
   def flt($v): if ($v|type) == "number" then $v else "" end;
   def str($v): if ($v|type) == "string" then $v else "" end;

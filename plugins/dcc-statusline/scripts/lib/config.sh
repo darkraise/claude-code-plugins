@@ -100,7 +100,8 @@ dcc_parse_all() { # dcc_parse_all <payload-json> <config-path> <claude-json-path
   [ -f "$cfg" ] || cfg=/dev/null
   [ -f "$who" ] || who=/dev/null
 
-  if out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --arg acct "${DCC_ACCT_KEY:-}" \
+  if out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --argjson themes "$DCC_THEMES" \
+                 --arg acct "${DCC_ACCT_KEY:-}" \
                  --slurpfile cfg "$cfg" --slurpfile who "$who" \
                  "$DCC_JQ_PROG" <<<"$input" 2>/dev/null); then
     eval "$out"; return 0
@@ -110,7 +111,8 @@ dcc_parse_all() { # dcc_parse_all <payload-json> <config-path> <claude-json-path
   # file (and its email) still comes through. A nonexistent config can't be
   # the cause of a failure, so there is nothing to gain by retrying without one.
   if [ "$cfg_existed" -eq 1 ] && \
-     out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --arg acct "${DCC_ACCT_KEY:-}" \
+     out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --argjson themes "$DCC_THEMES" \
+                 --arg acct "${DCC_ACCT_KEY:-}" \
                  --slurpfile cfg /dev/null --slurpfile who "$who" \
                  "$DCC_JQ_PROG" <<<"$input" 2>/dev/null); then
     DCC_CONFIG_BAD=1
@@ -121,7 +123,8 @@ dcc_parse_all() { # dcc_parse_all <payload-json> <config-path> <claude-json-path
   # .claude.json must be the corrupt one. Dropping only that keeps the config
   # -- and any account tint it defines -- intact.
   if [ "$cfg_existed" -eq 1 ] && \
-     out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --arg acct "${DCC_ACCT_KEY:-}" \
+     out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --argjson themes "$DCC_THEMES" \
+                 --arg acct "${DCC_ACCT_KEY:-}" \
                  --slurpfile cfg "$cfg" --slurpfile who /dev/null \
                  "$DCC_JQ_PROG" <<<"$input" 2>/dev/null); then
     eval "$out"; return 0
@@ -131,7 +134,8 @@ dcc_parse_all() { # dcc_parse_all <payload-json> <config-path> <claude-json-path
   # to begin with). Reaching here with cfg_existed=1 proves the config itself
   # doesn't parse either -- the previous attempt just tried it alone and failed.
   DCC_CONFIG_BAD=$cfg_existed
-  out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --arg acct "${DCC_ACCT_KEY:-}" \
+  out=$(jq -r --argjson d "$DCC_DEFAULT_CONFIG" --argjson themes "$DCC_THEMES" \
+             --arg acct "${DCC_ACCT_KEY:-}" \
              --slurpfile cfg /dev/null --slurpfile who /dev/null \
              "$DCC_JQ_PROG" <<<"$input" 2>/dev/null) || return 1
   eval "$out"
