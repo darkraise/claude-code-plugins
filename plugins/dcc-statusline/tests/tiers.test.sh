@@ -39,8 +39,11 @@ check "trunc with maxlen 0 is a no-op" "$DCC_TRUNC" "feature/responsive-tiers"
 _dcc_trunc "main" 10
 check "trunc leaves a short string alone" "$DCC_TRUNC" "main"
 _dcc_trunc "feature/responsive-tiers" 10
-check "trunc cuts and ellipsises" "$DCC_TRUNC" "feature/re…"
-check "trunc keeps maxlen characters plus the ellipsis" "${#DCC_TRUNC}" "11"
+check "trunc cuts and ellipsises" "$DCC_TRUNC" "feature/r…"
+check "trunc never exceeds maxlen" "${#DCC_TRUNC}" "10"
+_dcc_trunc "feature/responsive-tiers" 1
+check "trunc at maxlen 1 is the ellipsis alone" "$DCC_TRUNC" "…"
+check "trunc at maxlen 1 still honours the bound" "${#DCC_TRUNC}" "1"
 
 # --- dir ----------------------------------------------------------------------
 HOME="/home/u"

@@ -126,5 +126,9 @@ _dcc_trunc() { # _dcc_trunc <text> <maxlen> -> DCC_TRUNC
   case "$n" in ''|*[!0-9]*) return 0 ;; esac
   [ "$n" -gt 0 ] || return 0
   [ "${#s}" -gt "$n" ] || return 0
-  DCC_TRUNC="${s:0:$n}$DCC_ELLIPSIS"
+  # maxlen-1 characters, so the ellipsis brings the total back to exactly
+  # maxlen. Callers budget width against this bound -- segments.git.maxBranch
+  # means "at most this many cells" -- so a result one cell over would make
+  # every such budget wrong by one.
+  DCC_TRUNC="${s:0:$(( n - 1 ))}$DCC_ELLIPSIS"
 }
