@@ -6,6 +6,13 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib.sh"
 PREVIEW="$HERE/../scripts/preview.sh"
 
+# preview.sh builds its sample payload from $PWD and picks up the live git
+# branch, so content assertions below would otherwise depend on where this
+# repo sits on disk and what the branch is called. Run from a short path
+# outside any repository so the rendered widths are the same everywhere.
+tmpcwd="$(mktemp -d)"
+cd "$tmpcwd" || exit 1
+
 export LC_ALL=C.UTF-8
 export DCC_NOW=1785886800
 
@@ -65,4 +72,5 @@ check "a malformed config says so" \
   "$(printf '%s' "$out2" | grep -c 'not valid JSON')" "1"
 rm -f "$badcfg"
 
+cd "$HERE" && rm -rf "$tmpcwd"
 finish
