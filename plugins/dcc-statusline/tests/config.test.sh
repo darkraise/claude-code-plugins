@@ -6,6 +6,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib.sh"
 source "$HERE/../scripts/lib/path.sh"
+source "$HERE/../scripts/lib/jq-prog.sh"
 source "$HERE/../scripts/lib/config.sh"
 F="$HERE/fixtures"
 

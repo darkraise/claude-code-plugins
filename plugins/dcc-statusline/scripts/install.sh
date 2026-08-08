@@ -13,6 +13,7 @@ DCC_COMMAND="bash ~/.claude/dcc-statusline/statusline.sh"
 # dcc_doctor resolves the active account key exactly the way the render path
 # does, so a mismatch between the two can never be what the diagnostic misses.
 source "$DCC_SRC_DIR/lib/path.sh"
+source "$DCC_SRC_DIR/lib/jq-prog.sh"
 source "$DCC_SRC_DIR/lib/config.sh"
 
 _dcc_paths() { # -> DCC_HOME_DIR, DCC_DEST -- resolved fresh on every call, never
