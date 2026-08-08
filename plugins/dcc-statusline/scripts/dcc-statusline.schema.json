@@ -87,9 +87,9 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "ctx": { "type": "integer", "minimum": 0 },
-            "5h":  { "type": "integer", "minimum": 0 },
-            "7d":  { "type": "integer", "minimum": 0 }
+            "ctx": { "type": "integer", "minimum": 0, "maximum": 64 },
+            "5h":  { "type": "integer", "minimum": 0, "maximum": 64 },
+            "7d":  { "type": "integer", "minimum": 0, "maximum": 64 }
           }
         },
         "showEta": { "type": "boolean" },

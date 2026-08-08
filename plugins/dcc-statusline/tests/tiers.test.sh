@@ -148,6 +148,21 @@ check "a width-0 meter has no doubled space at tier 0" "$(segt ctx 0)" "ctx 47% 
 DCC_W_CTX=10
 check "the default width is unaffected at tier 0" "$(segt ctx 0)" "ctx #####..... 47% · 94k"
 
+# An absurd configured width is clamped to 64: dcc_bar builds its string by
+# repeated append, quadratic in the width, so an unbounded value would freeze
+# the continuously-redrawing status line. 47% of 64 fills 30 cells.
+DCC_W_CTX=200000
+check "an oversized meter width clamps to 64 cells" "$(segt ctx 0)" \
+  "ctx ##############################.................................. 47% · 94k"
+err="$( { dcc_seg_reset; dcc_segment ctx 0; } 2>&1 >/dev/null )"
+check "an oversized meter width writes nothing to stderr" "$err" ""
+# Past 64-bit range the numeric tests cannot evaluate; both width comparisons
+# are guarded so the failure is silent, not a per-render stderr line.
+DCC_W_CTX=99999999999999999999999
+err="$( { dcc_seg_reset; dcc_segment ctx 0; } 2>&1 >/dev/null )"
+check "a past-64-bit meter width writes nothing to stderr" "$err" ""
+DCC_W_CTX=10
+
 # --- monotonic shrink, every shrinking segment --------------------------------
 DCC_GIT_BRANCH="feature/responsive-tiers"
 P_5H_PCT=23; P_5H_RESET=1785900000

@@ -27,10 +27,15 @@ _dcc_meter() { # _dcc_meter <icon> <label> <pct> <width> <reset-epoch> <tokens|"
     2) width=$(( (width * 40 + 50) / 100 )) ;;
     *) width=0 ;;
   esac
+  # The frame is never more than a few hundred cells wide, and dcc_bar builds
+  # its string by repeated append -- quadratic in the width. Without an upper
+  # bound a config of meters.width 200000 takes over a minute per render, and
+  # the status line redraws continuously.
+  [ "$width" -gt 64 ] 2>/dev/null && width=64
   # A one-cell bar carries no information: dcc_bar's existing "never look full
   # below 100%" clamp empties it, so it would read as 0% at every reading under
   # 100. Below two cells the bar is dropped rather than shown misleadingly.
-  [ "$width" -lt 2 ] && width=0
+  [ "$width" -lt 2 ] 2>/dev/null && width=0
   dcc_ramp "$pct"
   dcc_bar "$pct" "$width"
   _dcc_icon "$icon" "$DCC_P_MUTE"
