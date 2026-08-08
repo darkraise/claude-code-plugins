@@ -164,4 +164,11 @@ check "a framed terminal still frames"       "$DCC_FRAME_ON"  "1"
 dcc_frame_budget
 check "a framed budget still insets by four" "$DCC_FRAME_BUDGET" "92"
 
+# A zero-padded COLUMNS must not be read as octal. $(( )) treats a leading
+# zero as an octal prefix by default, and "048" is not valid octal, so an
+# unguarded subtraction aborts the whole render rather than merely miscounting.
+DCC_FRAME_MODE="auto"; DCC_FRAME_MARGIN=4; COLUMNS=048; dcc_frame_init
+check "a zero-padded COLUMNS knows the same width as its unpadded form" \
+  "$DCC_WIDTH_COLS" "44"
+
 finish
