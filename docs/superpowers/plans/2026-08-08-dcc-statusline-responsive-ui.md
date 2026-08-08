@@ -1279,19 +1279,77 @@ DCC_L_5H="5h"
 DCC_L_7D="7d"
 ```
 
-- [ ] **Step 5: Run the tests**
+- [ ] **Step 5: Cover the jq extraction itself**
+
+`tiers.test.sh` sets the `DCC_SEG_*` and `DCC_L_*` globals directly, so it never
+runs the jq program at all. The seven new extraction lines are therefore
+untested by it — and the three label lines nest double quotes inside a jq string
+inside a bash single-quoted string, which is the most fragile construct in
+`DCC_JQ_PROG`. A syntax error there, or a reversed empty-string guard, would
+leave the whole suite green.
+
+Append to `plugins/dcc-statusline/tests/config.test.sh`, before its `finish`:
+
+```bash
+# --- segment options -----------------------------------------------------------
+cfg="$(mktemp)"
+cat > "$cfg" <<'JSON'
+{ "segments": {
+    "dir":   { "style": "leaf" },
+    "git":   { "counters": false, "maxBranch": 14 },
+    "model": { "short": true },
+    "ctx":   { "label": "context" },
+    "5h":    { "label": "session" },
+    "7d":    { "label": "week" } } }
+JSON
+dcc_parse_all "$(cat "$F/full.json")" "$cfg" /dev/null
+check "dir style comes through"     "$DCC_SEG_DIR_STYLE"     "leaf"
+check "counters false becomes 0"    "$DCC_SEG_GIT_COUNTERS"  "0"
+check "maxBranch comes through"     "$DCC_SEG_GIT_MAXBRANCH" "14"
+check "model short true becomes 1"  "$DCC_SEG_MODEL_SHORT"   "1"
+check "the ctx label comes through" "$DCC_L_CTX"             "context"
+check "the 5h label comes through"  "$DCC_L_5H"              "session"
+check "the 7d label comes through"  "$DCC_L_7D"              "week"
+rm -f "$cfg"
+
+# The whole object is optional: absent, every prior default stands.
+dcc_parse_all "$(cat "$F/full.json")" /dev/null /dev/null
+check "no segments object leaves the dir style empty" "$DCC_SEG_DIR_STYLE"     ""
+check "no segments object keeps counters on"          "$DCC_SEG_GIT_COUNTERS"  "1"
+check "no segments object keeps maxBranch at 0"       "$DCC_SEG_GIT_MAXBRANCH" "0"
+check "no segments object keeps the model long"       "$DCC_SEG_MODEL_SHORT"   "0"
+check "no segments object keeps the ctx label"        "$DCC_L_CTX"             "ctx"
+check "no segments object keeps the 7d label"         "$DCC_L_7D"              "7d"
+
+# An empty or non-string label falls back rather than rendering a bare leading
+# space where "ctx " used to be, which would read as a rendering bug.
+cfg="$(mktemp)"
+printf '{ "segments": { "ctx": { "label": "" }, "5h": { "label": 42 } } }' > "$cfg"
+dcc_parse_all "$(cat "$F/full.json")" "$cfg" /dev/null
+check "an empty label falls back"         "$DCC_L_CTX"      "ctx"
+check "a non-string label falls back"     "$DCC_L_5H"       "5h"
+check "a bad label is not a config error" "$DCC_CONFIG_BAD" "0"
+rm -f "$cfg"
+```
+
+This moves `config.test.sh` from 91 assertions to 107.
+
+- [ ] **Step 6: Run the tests**
 
 ```bash
 bash plugins/dcc-statusline/tests/tiers.test.sh
+bash plugins/dcc-statusline/tests/config.test.sh
 bash plugins/dcc-statusline/tests/run-all.sh
 ```
 
-Expected: both `0 failed`.
+Expected: all `0 failed`, with `config.test.sh` at 107.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add plugins/dcc-statusline/scripts/ plugins/dcc-statusline/tests/tiers.test.sh
+git add plugins/dcc-statusline/scripts/ \
+        plugins/dcc-statusline/tests/tiers.test.sh \
+        plugins/dcc-statusline/tests/config.test.sh
 git commit -m "feat(statusline): add per-segment options"
 ```
 
