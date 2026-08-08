@@ -51,11 +51,12 @@ close.
 ## Width
 
 Fitting only needs a known terminal width; drawing a frame additionally needs
-room for one. The two are separate: whenever `COLUMNS` is a usable number, the
-line fits to it, whether or not a box gets drawn. A terminal too narrow for a
-frame still gets its content shrunk to fit -- it just loses the border. Only
-when `COLUMNS` is missing or non-numeric is there truly no width to fit
-against, and the line renders at full size, exactly as it always has.
+room for one. The two are separate: whenever `COLUMNS` is a usable number
+larger than the margin, the line fits to it, whether or not a box gets drawn.
+A terminal too narrow for a frame still gets its content shrunk to fit -- it
+just loses the border. Only when `COLUMNS` is missing, non-numeric, or no
+larger than the margin is there truly no width to fit against, and the line
+renders at full size, exactly as it always has.
 
 When a line does not fit, its segments shrink rather than disappearing. The whole
 line steps down one tier at a time until it fits: the path drops its ancestry,

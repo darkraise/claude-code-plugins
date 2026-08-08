@@ -115,9 +115,11 @@ distinct cases:
   as it does in framed mode, minus the border.
 - `frame: none` — likewise a known width with a real budget; the user declined
   the box, not the fit.
-- `COLUMNS` missing or non-numeric — the width is genuinely unknown,
-  `DCC_FRAME_BUDGET` is `0`, and tier 0 always renders. This is the one case
-  that preserves today's unframed output exactly.
+- `COLUMNS` missing, non-numeric, or no larger than the margin — the width is
+  genuinely unknown or leaves nothing usable, `DCC_FRAME_BUDGET` is `0`, and
+  tier 0 always renders. Only the missing-or-non-numeric case preserves
+  today's unframed output exactly; `COLUMNS` unset is the one path this
+  change guarantees byte-identical.
 
 ### Escape hatch
 

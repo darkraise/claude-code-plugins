@@ -272,9 +272,11 @@ dcc_line_fit() { # dcc_line_fit <names> <max-cells> <mark-bad-config>
   # fits. Uniform escalation is deliberate: a line where the path abbreviated
   # but the branch did not would follow no rule a reader could infer.
   #
-  # A max of 0 means the width is unknown -- COLUMNS was missing or unusable,
-  # which is also why the frame is off -- so there is nothing to fit against and
-  # tier 0 stands.
+  # A max of 0 means the width is genuinely unknown -- COLUMNS is missing,
+  # non-numeric, or no larger than the margin -- so there is nothing to fit
+  # against and tier 0 stands. That is narrower than "the frame is off": the
+  # frame is also off whenever the width is known but too small for a box, and
+  # that case still fits against a real budget.
   local names="$1" max="${2:-0}" mark="${3:-0}" tier top="${DCC_MAX_TIER:-3}"
   # Whitelist the four legal values rather than range-checking. A digit guard
   # followed by [ "$top" -gt 3 ] fails open on a value past 64-bit range: the
