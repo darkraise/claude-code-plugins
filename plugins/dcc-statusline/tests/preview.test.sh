@@ -39,4 +39,30 @@ check "an unknown flag exits 2" "$rc" "2"
 bash "$PREVIEW" --help >/dev/null 2>&1; rc=$?
 check "--help exits 0" "$rc" "0"
 
+# A trailing flag must error rather than spin: `shift 2` with one argument left
+# returns 1 and shifts nothing, so the parse loop would never terminate. Run
+# under timeout so a regression fails the suite instead of hanging it.
+timeout 5 bash "$PREVIEW" --config /dev/null --width >/dev/null 2>&1; rc=$?
+check "a trailing --width exits 2 rather than hanging" "$rc" "2"
+timeout 5 bash "$PREVIEW" --theme >/dev/null 2>&1; rc=$?
+check "a trailing --theme exits 2 rather than hanging" "$rc" "2"
+
+# A path the user typed must fail loudly; a preview of built-in defaults would
+# look like a successful preview of a config that was never read.
+bash "$PREVIEW" --config /no/such/file.json >/dev/null 2>&1; rc=$?
+check "a missing explicit config exits 2" "$rc" "2"
+
+# But an explicit /dev/null is legitimate -- it is how the tests ask for the
+# built-in defaults, and -e accepts it where -f would not.
+bash "$PREVIEW" --config /dev/null --width 100 >/dev/null 2>&1; rc=$?
+check "an explicit /dev/null config is accepted" "$rc" "0"
+
+# A config that exists but does not parse warns on stderr and still renders.
+badcfg="$(mktemp)"; printf '{ not json' > "$badcfg"
+out2="$(bash "$PREVIEW" --config "$badcfg" --width 100 2>&1)"; rc=$?
+check "a malformed config still exits 0" "$rc" "0"
+check "a malformed config says so" \
+  "$(printf '%s' "$out2" | grep -c 'not valid JSON')" "1"
+rm -f "$badcfg"
+
 finish
