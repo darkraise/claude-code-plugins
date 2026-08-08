@@ -77,9 +77,8 @@ reading alone. This is the one place where the widest rendering is not simply
 the fullest one.
 
 Run `/dcc-statusline preview` to see your own config at five widths side by
-side. The narrowest of them falls below the width a frame needs, so it is
-labelled `unframed` rather than given a tier: with no frame there is no width
-budget, and nothing shrinks.
+side. A block too narrow to frame is labelled `unframed` rather than given a
+tier: with no frame there is no width budget, and nothing shrinks.
 
 ## Themes
 
