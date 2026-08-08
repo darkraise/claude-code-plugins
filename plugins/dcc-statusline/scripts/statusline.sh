@@ -37,7 +37,7 @@ _dcc_strip_account() { # _dcc_strip_account <names> -> DCC_NAMES
 }
 
 dcc_main() {
-  local names1 names2
+  local names1 names2 DCC_TIER1=0
 
   IFS= read -r -d '' input || true
   [ -n "$input" ] || return 0
@@ -87,6 +87,7 @@ dcc_main() {
     printf '%s\n' "$DCC_FRAME_OUT"
     DCC_SEP="$DCC_SEP1"; dcc_sep_cells "${#DCC_SEP1}"
     dcc_line_fit "$names1" "$DCC_FRAME_BUDGET" 1
+    DCC_TIER1="$DCC_LINE_TIER"
     dcc_frame_row "$DCC_LINE_OUT" "$DCC_LINE_CELLS"
     printf '%s\n' "$DCC_FRAME_OUT"
     DCC_SEP="$DCC_SEP2"; dcc_sep_cells "${#DCC_SEP2}"
@@ -95,17 +96,20 @@ dcc_main() {
     printf '%s\n' "$DCC_FRAME_OUT"
     dcc_frame_bottom
     printf '%s\n' "$DCC_FRAME_OUT"
+    [ -n "${DCC_PREVIEW_TIERS:-}" ] && printf 'DCC_TIERS %s/%s\n' "$DCC_TIER1" "$DCC_LINE_TIER"
     return 0
   fi
 
   DCC_SEP="$DCC_SEP1"; dcc_sep_cells "${#DCC_SEP1}"
   dcc_line_fit "$names1" 0 1
+  DCC_TIER1="$DCC_LINE_TIER"
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 
   DCC_SEP="$DCC_SEP2"; dcc_sep_cells "${#DCC_SEP2}"
   dcc_line_fit "$names2" 0 0
   [ -n "$DCC_LINE_OUT" ] && printf '%s\n' "$DCC_LINE_OUT"
 
+  [ -n "${DCC_PREVIEW_TIERS:-}" ] && printf 'DCC_TIERS %s/%s\n' "$DCC_TIER1" "$DCC_LINE_TIER"
   return 0
 }
 
