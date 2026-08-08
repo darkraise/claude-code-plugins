@@ -60,4 +60,48 @@ parse_with '{ "theme": 42 }'
 check "a non-string theme falls back to default" "$DCC_P_DIR"      "blue"
 check "a non-string theme is not a parse error"  "$DCC_CONFIG_BAD" "0"
 
+# Arrays must be replaced wholesale, not merged element-wise. Nothing else in
+# this file inspects lines or the ramp, so an element-wise merge -- which would
+# produce a nonsense colour progression -- would otherwise pass every assertion.
+parse_with '{ "theme": "minimal" }'
+check "minimal replaces the line list wholesale" "$DCC_LINE1" "dir git model"
+parse_with '{ "theme": "mono" }'
+check "mono replaces the ramp wholesale" "$DCC_RAMP" "0:gray: 75:white: 90:white:bold"
+
+# --- the fallback chain ------------------------------------------------------
+# dcc_parse_all has four jq invocations: a primary plus three fallbacks that
+# progressively drop the config and the account file. Every one needs
+# --argjson themes. A missed one fails with "$themes is not defined", and the
+# chain swallows that failure silently -- so the symptom is a theme that works
+# until one of those files happens to be malformed. These four cases are what
+# stop a future edit from reintroducing that without breaking any test.
+parse_with_who() { # parse_with_who <config-json> <who-json> -> DCC_*, PARSE_RC
+  local cfg who
+  cfg="$(mktemp)"; who="$(mktemp)"
+  printf '%s' "$1" > "$cfg"; printf '%s' "$2" > "$who"
+  dcc_parse_all "$PAYLOAD" "$cfg" "$who"; PARSE_RC=$?
+  rm -f "$cfg" "$who"
+}
+
+# Branch 3: the account file is corrupt, the config is not. The theme must
+# survive. Were this branch missing its themes argument it would fail through to
+# branch 4, which drops the config too, and the hue would come back "blue".
+parse_with_who '{ "theme": "mono" }' '{ not json'
+check "a theme survives a corrupt account file" "$DCC_P_DIR"      "white"
+check "a corrupt account file is not a config error" "$DCC_CONFIG_BAD" "0"
+
+# Branch 2: the config is corrupt, the account file is not. The theme is gone
+# with the config it lived in, but the account file must still come through --
+# which is the whole point of retrying without the config.
+parse_with_who '{ not json' '{"oauthAccount":{"emailAddress":"a@b.c"}}'
+check "a corrupt config still parses"          "$DCC_CONFIG_BAD" "1"
+check "and the account file still comes through" "$P_EMAIL"      "a@b.c"
+check "and defaults apply with no theme"         "$DCC_P_DIR"    "blue"
+
+# Branch 4: both corrupt. The parse must still succeed rather than returning 1
+# and leaving every global unassigned.
+parse_with_who '{ not json' '{ also not json'
+check "both files corrupt still parses" "$PARSE_RC"       "0"
+check "both files corrupt reports the config" "$DCC_CONFIG_BAD" "1"
+
 finish
