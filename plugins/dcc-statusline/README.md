@@ -212,7 +212,10 @@ so a missing block shortens the line instead of breaking it.
 
 Run `/dcc-statusline doctor`. It checks `jq` and `git`, whether the installed copy
 matches the plugin version, whether the config parses **and validates** — naming
-any key whose value is not usable — whether the account you are running now has a
+unknown keys, unrecognised names and enum values, invalid colours, and
+out-of-range numbers; a value of the wrong JSON type inside a valid key can
+still slip past, which a schema-aware editor catches — whether the account
+you are running now has a
 matching `accounts` entry, whether a fixture payload still renders, and which
 accounts have the entry.
 

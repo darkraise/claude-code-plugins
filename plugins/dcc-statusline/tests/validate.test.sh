@@ -40,6 +40,33 @@ check "an out-of-range maxTier is named" \
 check "the \$schema key is not reported as unknown" \
   "$(vout '{ "$schema": "./dcc-statusline.schema.json" }' | grep -c 'schema')" "0"
 
+# Value checks beyond names: enums and ranges, each read from the schema like
+# the name lists above, never from a second copy in bash.
+check "an unknown frame value is named" \
+  "$(vout '{ "frame": "bogus" }' | grep -c 'bogus')" "1"
+check "an unknown dir style is named" \
+  "$(vout '{ "segments": { "dir": { "style": "nonsense" } } }' | grep -c 'nonsense')" "1"
+check "a valid dir style is not a failure" \
+  "$(vout '{ "segments": { "dir": { "style": "leaf" } } }' | grep -c '^FAIL')" "0"
+check "an unknown icons mode is named" \
+  "$(vout '{ "icons": { "mode": "emoji" } }' | grep -c 'emoji')" "1"
+check "an out-of-range icons width is a failure" \
+  "$(vout '{ "icons": { "width": 99 } }' | grep -c '^FAIL')" "1"
+check "a negative meter width is a failure" \
+  "$(vout '{ "meters": { "width": { "ctx": -4 } } }' | grep -c '^FAIL')" "1"
+check "a meter width past the render clamp is a failure" \
+  "$(vout '{ "meters": { "width": { "ctx": 200000 } } }' | grep -c '^FAIL')" "1"
+check "a valid meter width is not a failure" \
+  "$(vout '{ "meters": { "width": { "ctx": 12 } } }' | grep -c '^FAIL')" "0"
+check "an unknown segments sub-key is named" \
+  "$(vout '{ "segments": { "typo": { "x": 1 } } }' | grep -c 'typo')" "1"
+check "an unknown responsive sub-key is named" \
+  "$(vout '{ "responsive": { "maxTier": 1, "extra": 2 } }' | grep -c 'extra')" "1"
+check "a numeric separator is a failure" \
+  "$(vout '{ "separator": 42 }' | grep -c '^FAIL')" "1"
+check "an array separator is not a failure" \
+  "$(vout '{ "separator": [" | "] }' | grep -c '^FAIL')" "0"
+
 # The valid-name lists come from the schema, not from a second copy in bash.
 # These assert the wiring, so a schema edit that widens or narrows a list is
 # picked up by doctor without anyone remembering to update a parallel constant.
@@ -52,6 +79,8 @@ check "theme names are read from the schema" \
   "$(printf '%s' "$DCC_VALID_THEMES" | wc -w | tr -d ' ')" "4"
 check "the schema list includes the time segment" \
   "$(printf '%s' "$DCC_VALID_SEGMENTS" | grep -c 'time')" "1"
+check "the meter width ceiling is read from the schema" "$DCC_METER_W_MAX" "64"
+check "the icon width ceiling is read from the schema" "$DCC_ICON_W_MAX" "2"
 
 # Membership, not counting, and deliberately on the LAST entry of each list.
 # A stray CR from a CRLF jq lands on exactly that entry, and every count-based
