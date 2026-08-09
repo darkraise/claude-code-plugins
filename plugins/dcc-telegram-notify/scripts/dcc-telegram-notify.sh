@@ -117,6 +117,7 @@ seed_config
 # each git repo gets its own auto-created topic; non-repos use TELEGRAM_TOPIC_ID.
 : "${TELEGRAM_TOPIC_MODE:=shared}"
 : "${TELEGRAM_TOPIC_MAP:=$TELEGRAM_NOTIFY_HOME/topics.json}"
+: "${TELEGRAM_AWAY_TTL:=7200}"
 
 # Which notifications are allowed to send. Comma- or space-separated tokens:
 #   permission    a tool call is waiting for approval
@@ -187,6 +188,42 @@ resolve_account_label() {
   esac
 }
 TELEGRAM_ACCOUNT_LABEL_RESOLVED="$(resolve_account_label)"
+
+# --- Away mode ---------------------------------------------------------------
+# The arming that turns the blocking gates on. Machine-wide by design: you walk
+# away from the machine, not from one project, so one flag covers every project
+# and every Claude account sharing this home.
+AWAY_FILE="$TELEGRAM_NOTIFY_HOME/away"
+
+away_armed() {
+  local exp
+  exp=$(cat "$AWAY_FILE" 2>/dev/null)
+  [[ "$exp" =~ ^[0-9]+$ ]] || { rm -f "$AWAY_FILE" 2>/dev/null; return 1; }
+  # An expired flag deletes itself here rather than waiting for a disarm, so a
+  # forgotten arming cannot gate sessions indefinitely.
+  [ "$(date +%s)" -lt "$exp" ] || { rm -f "$AWAY_FILE" 2>/dev/null; return 1; }
+}
+
+away_arm() {
+  local secs="${1:-$TELEGRAM_AWAY_TTL}"
+  mkdir -p "$TELEGRAM_NOTIFY_HOME" 2>/dev/null || return 0
+  printf '%s' "$(( $(date +%s) + secs ))" > "$AWAY_FILE" 2>/dev/null
+  return 0
+}
+
+away_disarm() { rm -f "$AWAY_FILE" 2>/dev/null; return 0; }
+
+parse_duration() {
+  local d="${1:-}"
+  case "$d" in
+    "")            return 1 ;;
+    *[0-9]h)       printf '%s' $(( ${d%h} * 3600 )) ;;
+    *[0-9]m)       printf '%s' $(( ${d%m} * 60 )) ;;
+    *[0-9]s)       printf '%s' "${d%s}" ;;
+    *[!0-9]*)      return 1 ;;
+    *)             printf '%s' "$d" ;;
+  esac
+}
 
 API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
 
@@ -729,6 +766,16 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
       printf 'enabled: %s\n' "$(events_list)"
       { [ -n "$TELEGRAM_EVENTS_UNKNOWN" ] && \
         printf 'ignored (not valid tokens): %s\n' "$TELEGRAM_EVENTS_UNKNOWN"; } || true
+      ;;
+    --away)
+      secs=$(parse_duration "${2:-}") || secs="$TELEGRAM_AWAY_TTL"
+      away_arm "$secs"
+      printf 'Away mode armed for %s. Permission prompts and questions will wait for a Telegram tap.\n' \
+        "$(format_duration "$secs")"
+      ;;
+    --back)
+      away_disarm
+      echo "Away mode disarmed. Prompts go straight to your terminal again."
       ;;
     "") main ;;
     *) die "unknown option: $1 (use --discover, --test, --edit, --events, or pipe hook JSON on stdin)" ;;
