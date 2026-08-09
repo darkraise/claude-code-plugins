@@ -27,8 +27,8 @@ export HOME="$fakehome"
 export CLAUDE_CONFIG_DIR="$fakehome/.claude"
 
 # Isolated so this file's renders never touch the real machine's
-# $TMPDIR/dcc-statusline/ -- warming it here would leave a fresh entry behind
-# for whichever test runs next, budget.test.sh included.
+# $TMPDIR/dcc-statusline-$UID/ -- warming it here would leave a fresh entry
+# behind for whichever test runs next, budget.test.sh included.
 export DCC_CACHE_HOME="$fakehome/cache"
 
 out="$(bash "$SCRIPT" < "$F/full.json" | strip_ansi)"

@@ -16,6 +16,10 @@ cd "$tmpcwd" || exit 1
 
 export LC_ALL=C.UTF-8
 export DCC_NOW=1785886800
+# Every preview render below goes through the real cache path; without this
+# each run would leave fp-nosession and git-<key> files in the real machine's
+# cache directory instead of this file's own sandbox.
+export DCC_CACHE_HOME="$tmpcwd/cache"
 
 out="$(bash "$PREVIEW" --config /dev/null 2>&1)"
 check "the default preview shows five widths" \

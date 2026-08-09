@@ -143,7 +143,7 @@ layout. Two seconds is the trade: any longer is visible, any shorter buys
 nothing.
 
 To keep that rate affordable, git state is cached under
-`$TMPDIR/dcc-statusline/` for ten seconds, and refreshed immediately whenever
+`$TMPDIR/dcc-statusline-$UID/` for ten seconds, and refreshed immediately whenever
 the payload's context-token count or cost differs from the previous run --
 a proxy for the session having advanced, rather than an idle timer tick
 repeating the same state. Deleting that directory is safe and forces a fresh

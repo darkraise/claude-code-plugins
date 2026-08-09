@@ -14,6 +14,9 @@ source "$HERE/lib.sh"
 fake="$(mktemp -d)"
 export DCC_FAKE_HOME="$fake"
 export DCC_STATUSLINE_HOME="$fake/.claude/dcc-statusline"
+# doctor's fixture-probe render goes through the real cache path; without this
+# it would write fp-nosession into the real machine's cache directory.
+export DCC_CACHE_HOME="$fake/cache"
 
 source "$HERE/../scripts/install.sh"
 
@@ -229,6 +232,9 @@ unset DCC_STATUSLINE_HOME
 # --- font detection at install ------------------------------------------------
 fake="$(mktemp -d)"
 export DCC_FAKE_HOME="$fake"
+# Re-pointed at the new $fake: the first one (and its cache subdir) was
+# already removed above, and the doctor call further down still renders.
+export DCC_CACHE_HOME="$fake/cache"
 mkdir -p "$fake/.claude"
 printf '{}' > "$fake/.claude/settings.json"
 

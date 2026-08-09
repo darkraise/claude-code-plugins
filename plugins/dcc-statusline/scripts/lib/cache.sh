@@ -20,7 +20,11 @@ DCC_CACHE_FORCE=0
 dcc_cache_dir() { # -> DCC_CACHE_DIR, empty when the directory cannot be used
   local root="${DCC_CACHE_HOME:-${TMPDIR:-/tmp}}"
   root="${root%/}"
-  DCC_CACHE_DIR="$root/dcc-statusline"
+  # Per-user, so a shared temp root can't hand one account's cache to another:
+  # a bare directory name would let a second user's writes fail silently
+  # against the first user's mode-755 directory and their reads see its
+  # world-readable, attacker-controllable contents.
+  DCC_CACHE_DIR="$root/dcc-statusline-$UID"
   # Guarded so the fork happens once per machine, not once per render.
   [ -d "$DCC_CACHE_DIR" ] || mkdir -p "$DCC_CACHE_DIR" 2>/dev/null || DCC_CACHE_DIR=""
 }
