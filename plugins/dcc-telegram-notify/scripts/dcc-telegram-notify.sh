@@ -118,6 +118,7 @@ seed_config
 : "${TELEGRAM_TOPIC_MODE:=shared}"
 : "${TELEGRAM_TOPIC_MAP:=$TELEGRAM_NOTIFY_HOME/topics.json}"
 : "${TELEGRAM_AWAY_TTL:=7200}"
+: "${TELEGRAM_AWAY_MAX:=604800}"
 
 # Which notifications are allowed to send. Comma- or space-separated tokens:
 #   permission    a tool call is waiting for approval
@@ -206,6 +207,9 @@ away_armed() {
 
 away_arm() {
   local secs="${1:-$TELEGRAM_AWAY_TTL}"
+  # Defence in depth: a non-numeric value here would abort the whole hook under
+  # `set -u`, so fall back rather than trusting the caller validated it.
+  [[ "$secs" =~ ^[0-9]+$ ]] || secs="$TELEGRAM_AWAY_TTL"
   mkdir -p "$TELEGRAM_NOTIFY_HOME" 2>/dev/null || return 0
   printf '%s' "$(( $(date +%s) + secs ))" > "$AWAY_FILE" 2>/dev/null
   return 0
@@ -213,16 +217,31 @@ away_arm() {
 
 away_disarm() { rm -f "$AWAY_FILE" 2>/dev/null; return 0; }
 
+# A duration a user typed, as a bare number of seconds or a number with an h/m/s
+# suffix. Everything else is refused with no output: an unvalidated value reaches
+# away_arm's arithmetic, where under `set -u` bash reads a non-numeric token as an
+# unset variable name and kills the process outright.
 parse_duration() {
-  local d="${1:-}"
+  local d="${1:-}" n unit secs
+  [ -n "$d" ] || return 1
   case "$d" in
-    "")            return 1 ;;
-    *[0-9]h)       printf '%s' $(( ${d%h} * 3600 )) ;;
-    *[0-9]m)       printf '%s' $(( ${d%m} * 60 )) ;;
-    *[0-9]s)       printf '%s' "${d%s}" ;;
-    *[!0-9]*)      return 1 ;;
-    *)             printf '%s' "$d" ;;
+    *h) n="${d%h}"; unit=h ;;
+    *m) n="${d%m}"; unit=m ;;
+    *s) n="${d%s}"; unit=s ;;
+    *)  n="$d";     unit=s ;;
   esac
+  [[ "$n" =~ ^[0-9]+$ ]] || return 1
+  # Bound the digit count before comparing: a value wider than the arithmetic can
+  # hold makes `[` itself fail rather than returning a clean refusal.
+  [ "${#n}" -le 9 ] || return 1
+  [ "$n" -gt 0 ] || return 1
+  case "$unit" in
+    h) secs=$(( n * 3600 )) ;;
+    m) secs=$(( n * 60 )) ;;
+    *) secs="$n" ;;
+  esac
+  [ "$secs" -le "$TELEGRAM_AWAY_MAX" ] || return 1
+  printf '%s' "$secs"
 }
 
 API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
@@ -768,7 +787,14 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
         printf 'ignored (not valid tokens): %s\n' "$TELEGRAM_EVENTS_UNKNOWN"; } || true
       ;;
     --away)
-      secs=$(parse_duration "${2:-}") || secs="$TELEGRAM_AWAY_TTL"
+      secs=""
+      if [ -n "${2:-}" ]; then
+        secs=$(parse_duration "$2") || {
+          printf 'Not a duration: %s. Using the default. Try 90, 45s, 30m or 2h.\n' "$2"
+          secs=""
+        }
+      fi
+      [ -n "$secs" ] || secs="$TELEGRAM_AWAY_TTL"
       away_arm "$secs"
       printf 'Away mode armed for %s. Permission prompts and questions will wait for a Telegram tap.\n' \
         "$(format_duration "$secs")"

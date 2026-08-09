@@ -47,12 +47,66 @@ check "an h suffix is hours" "$(parse_duration 2h)" "7200"
 check "nonsense is refused" "$(parse_duration wat || echo refused)" "refused"
 check "an empty duration is refused" "$(parse_duration "" || echo refused)" "refused"
 
+# A non-numeric prefix must not sail through to away_arm's arithmetic: under
+# `set -u` a bad token there reads as an unset variable name and kills the
+# hook outright. Each of these must print NOTHING, not just fail.
+check "a non-numeric prefix before a suffix is refused" "$(parse_duration abc45s)" ""
+check "a leading minus is refused" "$(parse_duration -5h)" ""
+check "a double suffix is refused" "$(parse_duration 2h30m)" ""
+check "a decimal is refused" "$(parse_duration 1.5h)" ""
+check "a bare zero is refused" "$(parse_duration 0)" ""
+check "a zero with a suffix is refused" "$(parse_duration 0h)" ""
+check "a 21-digit number is refused" "$(parse_duration 100000000000000000000)" ""
+# Well-formed but past TELEGRAM_AWAY_MAX (7 days): none of the earlier checks
+# exercise this path, since they use either invalid syntax or values already
+# under the cap.
+check "a duration beyond the max is refused" "$(parse_duration 1000h)" ""
+# Refused alone isn't enough: without the digit-count guard, `[ -gt 0 ]` on a
+# value too wide for 64-bit arithmetic errors out and happens to still return
+# non-zero, so the check above passes either way. Only the guard prevents the
+# shell's own overflow error from leaking to stderr.
+parse_stderr="$(parse_duration 100000000000000000000 2>&1 >/dev/null)"
+check "a 21-digit number produces no stderr noise" "$parse_stderr" ""
+
 # The CLI arms are what the slash command and the Telegram /away command call.
 home="$(mktemp -d)"; env="$(mktemp -u)"
 TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" bash "$SCRIPT" --away 1h >/dev/null
 check "--away writes the flag" "$([ -f "$home/away" ] && echo yes || echo no)" "yes"
 TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" bash "$SCRIPT" --back >/dev/null
 check "--back removes the flag" "$([ -f "$home/away" ] && echo yes || echo no)" "no"
+
+# A malformed duration reaches --away from a Telegram message a stranger could
+# send, so it must never crash the hook or leak a raw shell error to stderr --
+# it falls back to the default and says so.
+home="$(mktemp -d)"; env="$(mktemp -u)"; errfile="$(mktemp -u)"
+out=$(TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" bash "$SCRIPT" --away abc45s 2>"$errfile")
+status=$?
+check "--away abc45s exits 0" "$status" "0"
+check "--away abc45s reports the bad duration" \
+  "$(printf '%s' "$out" | head -n 1)" \
+  "Not a duration: abc45s. Using the default. Try 90, 45s, 30m or 2h."
+check "--away abc45s produces zero bytes on stderr" "$(wc -c < "$errfile" | tr -d ' ')" "0"
+exp=$(cat "$home/away" 2>/dev/null); now=$(date +%s); diff=$(( exp - now ))
+check "--away abc45s arms using the default TTL" \
+  "$([ "$diff" -ge $((TELEGRAM_AWAY_TTL - 5)) ] && [ "$diff" -le $((TELEGRAM_AWAY_TTL + 15)) ] && echo yes || echo no)" \
+  "yes"
+
+home="$(mktemp -d)"; env="$(mktemp -u)"; errfile="$(mktemp -u)"
+TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" bash "$SCRIPT" --away -5h >/dev/null 2>"$errfile" || true
+check "--away -5h produces zero bytes on stderr" "$(wc -c < "$errfile" | tr -d ' ')" "0"
+exp=$(cat "$home/away" 2>/dev/null); now=$(date +%s)
+check "--away -5h arms a flag with a FUTURE expiry" \
+  "$([ -n "$exp" ] && [ "$exp" -gt "$now" ] && echo yes || echo no)" "yes"
+
+# Defence in depth in away_arm itself: even called directly with a junk
+# argument (bypassing parse_duration entirely), it must still arm with the
+# default TTL rather than aborting under `set -u`.
+away_disarm
+away_arm "junk"
+exp=$(cat "$AWAY_FILE" 2>/dev/null); now=$(date +%s)
+check "away_arm with a junk argument still arms with a FUTURE expiry" \
+  "$([ -n "$exp" ] && [ "$exp" -gt "$now" ] && echo yes || echo no)" "yes"
+away_disarm
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
