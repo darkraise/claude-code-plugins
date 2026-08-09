@@ -142,8 +142,8 @@ export CURL_STUB_RESPONSE="$STUB_DIR/resp.json"
 cat > "$CURL_STUB_RESPONSE" <<'JSON'
 {"ok":true,"result":[
   {"update_id":100,"message":{"message_id":5,"text":"from an allowed user","from":{"id":111},"chat":{"id":-100}}},
-  {"update_id":101,"message":{"message_id":6,"text":"from a stranger","from":{"id":999},"chat":{"id":-100}}},
-  {"update_id":102,"callback_query":{"id":"cb1","data":"abc12345:0","from":{"id":222}}}
+  {"update_id":101,"callback_query":{"id":"cb1","data":"abc12345:0","from":{"id":222}}},
+  {"update_id":102,"message":{"message_id":6,"text":"from a stranger","from":{"id":999},"chat":{"id":-100}}}
 ]}
 JSON
 updates_offset_set 0
@@ -151,17 +151,19 @@ updates_poll
 check "poll returns 0 on a good response" "$?" "0"
 check "allowed senders are spooled" \
   "$([ -f "$SPOOL_DIR/100.json" ] && echo yes || echo no)" "yes"
-check "a stranger never reaches the spool" \
-  "$([ -f "$SPOOL_DIR/101.json" ] && echo yes || echo no)" "no"
 check "callback queries from allowed users are spooled" \
-  "$([ -f "$SPOOL_DIR/102.json" ] && echo yes || echo no)" "yes"
-# The offset must pass the FILTERED-OUT update too, or it is refetched forever.
-check "the offset advances past every update, filtered or not" \
+  "$([ -f "$SPOOL_DIR/101.json" ] && echo yes || echo no)" "yes"
+check "a stranger never reaches the spool" \
+  "$([ -f "$SPOOL_DIR/102.json" ] && echo yes || echo no)" "no"
+# The filtered-out update is deliberately the HIGHEST id in the batch: if the
+# offset were computed over spooled updates only, it would stop at 101 and the
+# stranger's messages would be refetched forever.
+check "the offset advances past a filtered update that is the batch's highest" \
   "$(updates_offset_get)" "102"
 
 # A replayed identical response must not duplicate anything.
 updates_poll
-check "a replay adds no duplicate spool entries" \
+check "re-spooling the same update_id yields one file" \
   "$(ls "$SPOOL_DIR" | wc -l | tr -d ' ')" "2"
 
 cat > "$CURL_STUB_RESPONSE" <<'JSON'
