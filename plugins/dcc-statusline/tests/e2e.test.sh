@@ -316,4 +316,36 @@ check "an absent COLUMNS still shows the full path" \
   "$(printf '%s\n' "$out" | sed -n 1p | grep -c 'Repositories')" "1"
 
 rm -rf "$fakehome"
+
+# --- the render path goes through the cache -----------------------------------
+# Proving it end to end rather than by unit test: the wiring is the whole point,
+# and a render that quietly still calls dcc_git_collect would pass every test in
+# cache.test.sh while costing two git calls every two seconds in the field.
+cachetmp="$(mktemp -d)"
+
+render_twice() { # -> the git call count across two identical renders
+  (
+    dcc_stub_git "$cachetmp/bin"
+    export PATH
+    export DCC_CACHE_HOME="$cachetmp/cache"
+    export GIT_CALLS="$cachetmp/calls"
+    export GIT_PORCELAIN="$HERE/fixtures/porcelain-dirty.txt"
+    export GIT_ROOT="$cachetmp"
+    : > "$GIT_CALLS"
+    # The fixture's cwd is a path on the author's machine. Repointing it at the
+    # temp dir keeps the assertion about caching rather than about which
+    # directories happen to exist. The default segment list includes "dir" and
+    # "git", so the render does reach the git path.
+    payload="$(jq -c --arg d "$cachetmp" '.workspace.current_dir = $d | .cwd = $d' "$F/full.json")"
+    for _ in 1 2; do
+      printf '%s' "$payload" \
+        | DCC_STATUSLINE_CONFIG=/dev/null bash "$SCRIPT" >/dev/null 2>&1
+    done
+    wc -l < "$GIT_CALLS" | tr -d ' '
+  )
+}
+
+check "two identical renders share one git collect" "$(render_twice)" "2"
+rm -rf "$cachetmp"
+
 finish

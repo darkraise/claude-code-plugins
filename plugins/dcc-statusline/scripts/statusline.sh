@@ -2,8 +2,9 @@
 # Claude Code status line. Reads the session payload on stdin, prints two lines,
 # or four when the frame is enabled.
 #
-# Process budget: one jq, two git, and the timeout wrappers around them. Nothing
-# in this file may use $(...) -- see the note in lib/color.sh.
+# Process budget: one jq on a cache hit, plus two git and the timeout wrappers
+# when the git cache misses or the payload shows an event-driven run. Nothing in
+# this file may use $(...) -- see the note in lib/color.sh.
 set -uo pipefail
 
 # Without a UTF-8 locale bash measures and slices bytes, so a three-byte box
@@ -24,6 +25,7 @@ source "$DCC_DIR/lib/icons.sh"
 source "$DCC_DIR/lib/render.sh"
 source "$DCC_DIR/lib/frame.sh"
 source "$DCC_DIR/lib/git.sh"
+source "$DCC_DIR/lib/cache.sh"
 source "$DCC_DIR/lib/segments.sh"
 
 _dcc_strip_account() { # _dcc_strip_account <names> -> DCC_NAMES
@@ -83,7 +85,7 @@ dcc_main() {
 
   # Collect git state only when a git segment is actually configured.
   case " $names1 $names2 " in
-    *" git "*|*" dir "*) dcc_git_collect "$P_CWD" || true ;;
+    *" git "*|*" dir "*) dcc_cache_event; dcc_git_cached "$P_CWD" || true ;;
   esac
 
   if [ "$DCC_FRAME_ON" -eq 1 ]; then

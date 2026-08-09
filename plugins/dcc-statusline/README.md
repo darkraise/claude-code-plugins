@@ -136,6 +136,17 @@ comes back formatted with two-space indentation. Its contents are preserved;
 only the layout is normalized. Uninstalling removes the `statusLine` key and
 leaves everything else as it was.
 
+The entry sets `refreshInterval: 2`. Claude Code does not re-run a status line
+command when the terminal is resized -- resize is not one of its update triggers
+-- so the refresh timer is what bounds how long a resized terminal keeps its old
+layout. Two seconds is the trade: any longer is visible, any shorter buys
+nothing.
+
+To keep that rate affordable, git state is cached under
+`$TMPDIR/dcc-statusline/` for ten seconds, and refreshed immediately whenever
+the session payload shows a new assistant message rather than an idle timer
+tick. Deleting that directory is safe and forces a fresh collect.
+
 ## Configuration
 
 `~/.claude/dcc-statusline.json`, shared by every account. Delete it to return to
@@ -232,3 +243,7 @@ key the plugin resolved for the current `CLAUDE_CONFIG_DIR`, which is what your
 `accounts` map has to be keyed on. Windows spellings (`C:\Users\you\.claude-alt`,
 `C:/Users/you/.claude-alt`) and the Git Bash spelling (`/c/Users/you/.claude-alt`)
 all resolve to the same `~/.claude-alt` key, so write the `~` form.
+
+- **The status line does not follow a terminal resize.** The account's
+  `refreshInterval` has drifted from 2. Run `/dcc-statusline doctor` to confirm,
+  then `/dcc-statusline install --all`.
