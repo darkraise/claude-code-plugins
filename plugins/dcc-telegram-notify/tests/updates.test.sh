@@ -190,6 +190,12 @@ f=$(mk 201 '{"update_id":201,"message":{"message_id":51,"chat":{"id":-100},"mess
 check "a reply to someone else's notification does not match" \
   "$(match_reply_to "$f" && echo yes || echo no)" "no"
 
+# message_id is only unique within a chat, so a matching id from a different
+# chat (a DM alongside the group, say) must not be claimed.
+f=$(mk 201b '{"update_id":2011,"message":{"message_id":63,"chat":{"id":-200},"message_thread_id":7,"text":"cross chat","reply_to_message":{"message_id":42}}}')
+check "a reply with a matching id in a different chat does not match" \
+  "$(match_reply_to "$f" && echo yes || echo no)" "no"
+
 # A bare topic message routes to whichever notification is currently newest
 # there, so "just type an answer" works without long-pressing to Reply.
 mkdir -p "$TELEGRAM_NOTIFY_HOME/last"
@@ -210,6 +216,15 @@ check "a bare message in another topic does not match" \
 # here too would let a single update satisfy two matchers at once.
 f=$(mk 203b '{"update_id":2031,"message":{"message_id":58,"chat":{"id":-100},"message_thread_id":7,"text":"explicit","reply_to_message":{"message_id":42}}}')
 check "a reply carrying reply_to_message is not claimed as bare" \
+  "$(match_bare_topic "$f" && echo yes || echo no)" "no"
+
+# Telegram auto-fills reply_to_message with the topic's own root message even
+# when the user typed a plain answer, so that case must still be claimed bare.
+f=$(mk 203c '{"update_id":2032,"message":{"message_id":59,"chat":{"id":-100},"message_thread_id":7,"text":"topic root reply","reply_to_message":{"message_id":7}}}')
+check "a topic-root auto-reply still matches bare" \
+  "$(match_bare_topic "$f" && echo yes || echo no)" "yes"
+f=$(mk 203d '{"update_id":2033,"message":{"message_id":60,"chat":{"id":-100},"message_thread_id":7,"text":"explicit elsewhere","reply_to_message":{"message_id":5000}}}')
+check "a reply pointing elsewhere still does not match bare" \
   "$(match_bare_topic "$f" && echo yes || echo no)" "no"
 
 check "the main thread renders as the literal name main" \
@@ -239,6 +254,9 @@ check "an away command in another chat does not match" \
 f=$(mk 209 '{"update_id":209,"message":{"message_id":57,"chat":{"id":-100},"text":"/back"}}')
 check "a back command matches anywhere in our chat" \
   "$(match_command "$f" && echo yes || echo no)" "yes"
+f=$(mk 210 '{"update_id":210,"message":{"message_id":61,"chat":{"id":-100},"text":"/backend deploy failed"}}')
+check "a message merely starting with /back is not a command" \
+  "$(match_command "$f" && echo yes || echo no)" "no"
 rm -f "$SPOOL_DIR"/*.json
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

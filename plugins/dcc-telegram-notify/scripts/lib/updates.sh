@@ -213,19 +213,29 @@ last_marker_path() {
 }
 
 match_reply_to() {
-  local rid
+  local rid chat
+  # message_id is only unique within a chat, and updates_poll spools updates
+  # from every chat the bot is in, so an unscoped id could pick up a reply
+  # aimed at a waiter in a different chat entirely.
+  chat=$(jq -r '.message.chat.id // empty' "$1" 2>/dev/null)
+  [ "$chat" = "${MATCH_CHAT:-}" ] || return 1
   rid=$(jq -r '.message.reply_to_message.message_id // empty' "$1" 2>/dev/null)
   [ -n "$rid" ] && [ "$rid" = "${MATCH_REPLY_TO:-}" ]
 }
 
 match_bare_topic() {
-  local chat topic
+  local chat topic rid
   jq -e '.message' "$1" >/dev/null 2>&1 || return 1
-  jq -e '.message.reply_to_message' "$1" >/dev/null 2>&1 && return 1
   chat=$(jq -r '.message.chat.id // empty' "$1" 2>/dev/null)
   topic=$(jq -r '.message.message_thread_id // empty' "$1" 2>/dev/null)
   [ "$chat" = "${MATCH_CHAT:-}" ] || return 1
   [ "${topic:-}" = "${MATCH_TOPIC:-}" ] || return 1
+  # Telegram auto-fills reply_to_message with a topic's ROOT message even when
+  # the user never pressed Reply, so only a reply pointing somewhere else counts
+  # as an explicit one -- otherwise a plain answer typed into a topic would be
+  # rejected here and picked up by nothing.
+  rid=$(jq -r '.message.reply_to_message.message_id // empty' "$1" 2>/dev/null)
+  [ -n "$rid" ] && [ "$rid" != "${topic:-}" ] && return 1
   # Only the newest notification in this topic may absorb an unaddressed reply,
   # so an older session cannot swallow an answer meant for a newer prompt.
   [ "$(cat "$(last_marker_path "$MATCH_CHAT" "$MATCH_TOPIC")" 2>/dev/null)" = "${MATCH_REPLY_TO:-}" ]
@@ -244,7 +254,10 @@ match_command() {
   chat=$(jq -r '.message.chat.id // empty' "$1" 2>/dev/null)
   [ "$chat" = "${MATCH_CHAT:-}" ] || return 1
   text=$(jq -r '.message.text // empty' "$1" 2>/dev/null)
-  case "$text" in /away*|/back*) return 0 ;; *) return 1 ;; esac
+  case "$text" in
+    /away|/away\ *|/back|/back\ *) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 update_text() { jq -r '.message.text // ""' <<<"$1" 2>/dev/null; }
