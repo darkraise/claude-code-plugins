@@ -51,6 +51,14 @@ DCC_NOW=1020
 dcc_git_cached "$tmp/repo"
 check "a stamp older than the TTL refreshes" "$(calls)" "2"
 
+# --- the refreshed entry is itself servable warm --------------------------------
+: > "$GIT_CALLS"
+DCC_NOW=1021
+dcc_git_cached "$tmp/repo"; rc=$?
+check "a refresh's own entry serves warm"        "$rc" "0"
+check "a refresh's own entry costs no git calls" "$(calls)" "0"
+check "a refresh's own entry still has a branch" "$DCC_GIT_BRANCH" "feat/dcc-statusline"
+
 # --- a torn file is not trusted -----------------------------------------------
 # A concurrent writer can in principle leave a file with no sentinel. Serving it
 # would render counts from a half-written cache, which looks like real data.
