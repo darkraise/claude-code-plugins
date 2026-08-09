@@ -148,6 +148,7 @@ git commit -m "feat(statusline): refresh every 2s so resizes land"
 **Files:**
 - Create: `plugins/dcc-statusline/scripts/lib/cache.sh`
 - Create: `plugins/dcc-statusline/tests/cache.test.sh`
+- Modify: `plugins/dcc-statusline/tests/lib.sh` (add the shared git stub helper)
 
 **Interfaces:**
 - Consumes: `dcc_git_collect <dir>` from `scripts/lib/git.sh` — returns 0 inside a repository and sets `DCC_GIT_BRANCH`, `DCC_GIT_AHEAD`, `DCC_GIT_BEHIND`, `DCC_GIT_STAGED`, `DCC_GIT_UNSTAGED`, `DCC_GIT_UNTRACKED`, `DCC_GIT_DIRTY`, `DCC_GIT_ROOT`; returns non-zero outside one. Also `DCC_NOW`, the epoch second `statusline.sh` computes before any git work.
@@ -157,8 +158,33 @@ git commit -m "feat(statusline): refresh every 2s so resizes land"
   - `dcc_cache_key <string>` → sets `DCC_CACHE_KEY`.
   - `DCC_CACHE_TTL` (default 10) and `DCC_CACHE_FORCE` (0/1; Task 3 sets it).
   - `DCC_CACHE_HOME`, a test-only override for the temp root.
+  - `dcc_stub_git <bindir>` in `tests/lib.sh` — writes a counting git stub and prepends `<bindir>` to `PATH`. Task 4's end-to-end test uses the same helper.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Add the shared git stub helper**
+
+Append to `plugins/dcc-statusline/tests/lib.sh`:
+
+```bash
+# Test-only: a git that records every invocation and answers from fixtures, so a
+# test can assert how many times the render path actually shelled out. The caller
+# exports GIT_CALLS, GIT_PORCELAIN and GIT_ROOT to point it at its own files.
+dcc_stub_git() { # dcc_stub_git <bin-dir>
+  local bin="$1"
+  mkdir -p "$bin"
+  cat > "$bin/git" <<'SH'
+#!/usr/bin/env bash
+printf 'call\n' >> "$GIT_CALLS"
+case " $* " in
+  *" --porcelain=v2 "*)  cat "$GIT_PORCELAIN" ;;
+  *" --show-toplevel "*) printf '%s\n' "$GIT_ROOT" ;;
+esac
+SH
+  chmod +x "$bin/git"
+  PATH="$bin:$PATH"
+}
+```
+
+- [ ] **Step 2: Write the failing test**
 
 Create `plugins/dcc-statusline/tests/cache.test.sh`:
 
@@ -177,18 +203,10 @@ source "$HERE/../scripts/lib/cache.sh"
 
 tmp="$(mktemp -d)"
 export DCC_CACHE_HOME="$tmp/cachehome"
-mkdir -p "$tmp/bin" "$tmp/repo" "$tmp/plain"
+mkdir -p "$tmp/repo" "$tmp/plain"
 
-cat > "$tmp/bin/git" <<'SH'
-#!/usr/bin/env bash
-printf 'call\n' >> "$GIT_CALLS"
-case " $* " in
-  *" --porcelain=v2 "*)  cat "$GIT_PORCELAIN" ;;
-  *" --show-toplevel "*) printf '%s\n' "$GIT_ROOT" ;;
-esac
-SH
-chmod +x "$tmp/bin/git"
-export PATH="$tmp/bin:$PATH"
+dcc_stub_git "$tmp/bin"
+export PATH
 export GIT_CALLS="$tmp/calls"
 export GIT_PORCELAIN="$HERE/fixtures/porcelain-dirty.txt"
 export GIT_ROOT="$tmp/repo"
@@ -264,12 +282,12 @@ rm -rf "$tmp"
 finish
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 3: Run the test to verify it fails**
 
 Run: `bash plugins/dcc-statusline/tests/cache.test.sh`
 Expected: FAIL immediately — `scripts/lib/cache.sh: No such file or directory`.
 
-- [ ] **Step 3: Write the implementation**
+- [ ] **Step 4: Write the implementation**
 
 Create `plugins/dcc-statusline/scripts/lib/cache.sh`:
 
@@ -379,20 +397,21 @@ dcc_git_cached() { # dcc_git_cached <dir> -> git globals; non-zero outside a rep
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [ ] **Step 5: Run the test to verify it passes**
 
 Run: `bash plugins/dcc-statusline/tests/cache.test.sh`
 Expected: PASS, `0 failed`.
 
-- [ ] **Step 5: Run the whole suite**
+- [ ] **Step 6: Run the whole suite**
 
 Run: `bash plugins/dcc-statusline/tests/run-all.sh`
 Expected: every file reports `0 failed`. Nothing sources `cache.sh` yet, so no other file changes behavior.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add plugins/dcc-statusline/scripts/lib/cache.sh plugins/dcc-statusline/tests/cache.test.sh
+git add plugins/dcc-statusline/scripts/lib/cache.sh plugins/dcc-statusline/tests/cache.test.sh \
+        plugins/dcc-statusline/tests/lib.sh
 git commit -m "feat(statusline): cache git state between renders"
 ```
 
@@ -555,20 +574,11 @@ Append to `plugins/dcc-statusline/tests/e2e.test.sh`, before its `finish` call. 
 # and a render that quietly still calls dcc_git_collect would pass every test in
 # cache.test.sh while costing two git calls every two seconds in the field.
 cachetmp="$(mktemp -d)"
-mkdir -p "$cachetmp/bin"
-cat > "$cachetmp/bin/git" <<'SH'
-#!/usr/bin/env bash
-printf 'call\n' >> "$GIT_CALLS"
-case " $* " in
-  *" --porcelain=v2 "*)  cat "$GIT_PORCELAIN" ;;
-  *" --show-toplevel "*) printf '%s\n' "$GIT_ROOT" ;;
-esac
-SH
-chmod +x "$cachetmp/bin/git"
 
 render_twice() { # -> the git call count across two identical renders
   (
-    export PATH="$cachetmp/bin:$PATH"
+    dcc_stub_git "$cachetmp/bin"
+    export PATH
     export DCC_CACHE_HOME="$cachetmp/cache"
     export GIT_CALLS="$cachetmp/calls"
     export GIT_PORCELAIN="$HERE/fixtures/porcelain-dirty.txt"
