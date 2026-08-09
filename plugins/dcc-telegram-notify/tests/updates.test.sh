@@ -259,5 +259,119 @@ check "a message merely starting with /back is not a command" \
   "$(match_command "$f" && echo yes || echo no)" "no"
 rm -f "$SPOOL_DIR"/*.json
 
+# --- config sanitization boundary (Task 5 additional work) -------------------
+# TELEGRAM_REPLY_POLL, TELEGRAM_SPOOL_TTL and TELEGRAM_LOCK_STALE are config
+# text a user can hand-edit, and each reaches this library's own arithmetic or
+# `[ -gt ]` compares. Each variable is fixed at source time, so every case here
+# sources a fresh copy of the library in its own subprocess with the value
+# under test already in its environment. Sinks are exercised directly (not
+# just sanitize_seconds itself) so a broken call site, not just a broken
+# helper, is what these prove.
+touch_ago() { # touch_ago <seconds-ago> <path>
+  touch -d "@$(( $(date +%s) - $1 ))" "$2" 2>/dev/null \
+    || touch -t "$(date -r $(( $(date +%s) - $1 )) +%Y%m%d%H%M.%S)" "$2"
+}
+
+# TELEGRAM_REPLY_POLL feeds `curl --max-time "$((TELEGRAM_REPLY_POLL + 10))"`
+# in _updates_poll_locked. A stub curl records the --max-time value it was
+# handed instead of calling Telegram.
+STUB2_DIR="$(mktemp -d)"
+cat > "$STUB2_DIR/curl" <<'STUB'
+#!/usr/bin/env bash
+prev=""
+for a in "$@"; do
+  [ "$prev" = "--max-time" ] && printf '%s' "$a" > "$CURL_MAXTIME_FILE"
+  prev="$a"
+done
+cat >/dev/null 2>/dev/null
+printf '{"ok":true,"result":[]}'
+STUB
+chmod +x "$STUB2_DIR/curl"
+
+poll_maxtime() { # poll_maxtime <TELEGRAM_REPLY_POLL value> <errfile>
+  local home maxfile
+  home="$(mktemp -d)"; maxfile="$(mktemp -u)"
+  PATH="$STUB2_DIR:$PATH" TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_REPLY_POLL="$1" \
+    CURL_MAXTIME_FILE="$maxfile" bash -c '
+      set -uo pipefail
+      API="https://example.invalid/botTEST"; dbg() { :; }
+      # shellcheck disable=SC1090
+      source "'"$LIB"'"
+      updates_poll
+    ' >/dev/null 2>"$2"
+  cat "$maxfile" 2>/dev/null
+}
+errfile="$(mktemp -u)"
+check "TELEGRAM_REPLY_POLL=banana falls back to the default poll timeout (3+10)" \
+  "$(poll_maxtime banana "$errfile")" "13"
+check "TELEGRAM_REPLY_POLL=banana produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+errfile="$(mktemp -u)"
+check "TELEGRAM_REPLY_POLL=007 normalizes to decimal 7, not a fallback or octal misread" \
+  "$(poll_maxtime 007 "$errfile")" "17"
+check "TELEGRAM_REPLY_POLL=007 produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+
+# TELEGRAM_SPOOL_TTL feeds `[ $((now - mt)) -gt "$TELEGRAM_SPOOL_TTL" ]` in
+# updates_sweep. Chosen ages straddle the fallback default (300s) so a
+# non-numeric value that silently fell back to 0 (swept always) or stayed
+# unsanitized (a fatal `[` error) would both be caught here.
+sweep_survives() { # sweep_survives <TELEGRAM_SPOOL_TTL value> <age-seconds> <errfile>
+  local home
+  home="$(mktemp -d)"
+  TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_SPOOL_TTL="$1" bash -c '
+    set -uo pipefail
+    API="x"; dbg() { :; }
+    # shellcheck disable=SC1090
+    source "'"$LIB"'"
+    mkdir -p "$SPOOL_DIR"
+    printf "{}" > "$SPOOL_DIR/1.json"
+    '"$(declare -f touch_ago)"'
+    touch_ago '"$2"' "$SPOOL_DIR/1.json"
+    updates_sweep
+    [ -f "$SPOOL_DIR/1.json" ] && echo survived || echo swept
+  ' 2>"$3"
+}
+errfile="$(mktemp -u)"
+check "TELEGRAM_SPOOL_TTL=banana falls back to the default 300s (400s-old entry swept)" \
+  "$(sweep_survives banana 400 "$errfile")" "swept"
+check "TELEGRAM_SPOOL_TTL=banana produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+errfile="$(mktemp -u)"
+check "TELEGRAM_SPOOL_TTL=0005 normalizes to decimal 5, not the 300s default (10s-old entry swept)" \
+  "$(sweep_survives 0005 10 "$errfile")" "swept"
+check "TELEGRAM_SPOOL_TTL=0005 produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+
+# TELEGRAM_LOCK_STALE feeds the mkdir-fallback lock steal in
+# lock_mkdir_acquire. A lock dir older than the effective threshold must be
+# stolen (with_lock's probe runs); one younger must not.
+lock_stolen() { # lock_stolen <TELEGRAM_LOCK_STALE value> <age-seconds> <errfile>
+  local home
+  home="$(mktemp -d)"
+  TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_LOCK_STALE="$1" TELEGRAM_LOCK_FORCE_MKDIR=1 bash -c '
+    set -uo pipefail
+    API="x"; dbg() { :; }
+    # shellcheck disable=SC1090
+    source "'"$LIB"'"
+    LOCKP="$TELEGRAM_NOTIFY_HOME/t.lock"
+    mkdir "$LOCKP.d"
+    '"$(declare -f touch_ago)"'
+    touch_ago '"$2"' "$LOCKP.d"
+    probe() { printf ran; }
+    with_lock "$LOCKP" probe
+  ' 2>"$3"
+}
+errfile="$(mktemp -u)"
+check "TELEGRAM_LOCK_STALE=banana falls back to the default 60s (70s-old lock stolen)" \
+  "$(lock_stolen banana 70 "$errfile")" "ran"
+check "TELEGRAM_LOCK_STALE=banana produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+errfile="$(mktemp -u)"
+check "TELEGRAM_LOCK_STALE=005 normalizes to decimal 5, not the 60s default (6s-old lock stolen)" \
+  "$(lock_stolen 005 6 "$errfile")" "ran"
+check "TELEGRAM_LOCK_STALE=005 produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

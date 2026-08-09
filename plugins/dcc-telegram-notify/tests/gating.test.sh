@@ -132,5 +132,32 @@ check "stop-reply sends when the LLM classifies a reply" \
 check "stop-question mutes when the LLM classifies a reply" \
   "$(sends_llm reply stop-question "$STOP_W")" "0"
 
+# --- TELEGRAM_MAX_CHARS sanitization (Task 5 additional work) ---------------
+# clamp's `(( ${#text} > limit ))` runs inside a command substitution, so an
+# unsanitized bad value does not kill the hook -- it kills only that subshell,
+# and the parent silently sends an EMPTY message body. Each case sources a
+# fresh copy of the engine in its own subprocess with the value under test
+# already in its environment, then calls clamp directly the way send_message
+# does, so the actual sink is exercised, not just the sanitizer.
+clamp_with() { # clamp_with <TELEGRAM_MAX_CHARS value> <errfile>
+  local home env
+  home="$(mktemp -d)"; env="$(mktemp -u)"
+  TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" TELEGRAM_MAX_CHARS="$1" bash -c '
+    # shellcheck disable=SC1090
+    source "'"$SCRIPT"'"
+    clamp "hello world" "$TELEGRAM_MAX_CHARS"
+  ' 2>"$2"
+}
+errfile="$(mktemp -u)"
+check "TELEGRAM_MAX_CHARS=banana falls back so clamp still returns text, not empty" \
+  "$(clamp_with banana "$errfile")" "hello world"
+check "TELEGRAM_MAX_CHARS=banana produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+errfile="$(mktemp -u)"
+check "TELEGRAM_MAX_CHARS=010 normalizes to decimal 10, not octal 8" \
+  "$(clamp_with 010 "$errfile")" "hello worl… (truncated)"
+check "TELEGRAM_MAX_CHARS=010 produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

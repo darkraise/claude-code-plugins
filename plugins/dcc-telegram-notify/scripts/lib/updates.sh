@@ -7,12 +7,20 @@
 # other's replies, so a poller files EVERY update it receives into a shared
 # spool and each waiter then claims only what is addressed to it.
 
+# sanitize_seconds is shared with the engine; resolved relative to this file so
+# a standalone test source (which never loads the engine) still finds it.
+UPDATES_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1090
+[ -r "$UPDATES_LIB_DIR/common.sh" ] && . "$UPDATES_LIB_DIR/common.sh"
+
 : "${TELEGRAM_ALLOWED_USERS:=}"
 : "${TELEGRAM_REPLY:=on}"
 : "${TELEGRAM_REPLY_WINDOW:=600}"
 : "${TELEGRAM_REPLY_WINDOW_AWAY:=3600}"
 : "${TELEGRAM_REPLY_POLL:=3}"
+TELEGRAM_REPLY_POLL=$(sanitize_seconds "$TELEGRAM_REPLY_POLL" 3)
 : "${TELEGRAM_SPOOL_TTL:=300}"
+TELEGRAM_SPOOL_TTL=$(sanitize_seconds "$TELEGRAM_SPOOL_TTL" 300)
 
 UPDATES_DIR="$TELEGRAM_NOTIFY_HOME/updates"
 SPOOL_DIR="$UPDATES_DIR/spool"
@@ -49,6 +57,7 @@ file_mtime() {
 # falls back to an atomic mkdir. Unlike flock the kernel cannot release a mkdir
 # lock when its holder dies, hence the stale steal below.
 : "${TELEGRAM_LOCK_STALE:=60}"
+TELEGRAM_LOCK_STALE=$(sanitize_seconds "$TELEGRAM_LOCK_STALE" 60)
 
 # with_lock <lockpath> <command...> -- runs the command while holding the lock
 # and propagates its exit code; returns 1 without running it if the lock is

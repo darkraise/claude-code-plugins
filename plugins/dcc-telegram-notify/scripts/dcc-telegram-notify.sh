@@ -112,23 +112,21 @@ seed_config
 # won't exist on every machine, and an empty URL avoids a per-turn timeout.
 : "${TELEGRAM_LLM_URL:=}" "${TELEGRAM_LLM_MODEL:=auto/best-fast}"
 : "${TELEGRAM_LLM_API_KEY:=}" "${TELEGRAM_LLM_TIMEOUT:=12}" "${TELEGRAM_LLM_MAX_TOKENS:=512}"
+
+# sanitize_seconds lives in lib/common.sh, shared with the read side (which
+# sources the same file itself), so a bad config value is validated the same
+# way wherever it lands. Resolved now, ahead of the first config value that
+# needs it.
+TELEGRAM_COMMON_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
+# shellcheck disable=SC1090
+[ -r "$TELEGRAM_COMMON_LIB" ] && . "$TELEGRAM_COMMON_LIB"
+
 : "${TELEGRAM_MAX_CHARS:=3500}"
+TELEGRAM_MAX_CHARS=$(sanitize_seconds "$TELEGRAM_MAX_CHARS" 3500)
 # Topic routing. "shared": every message goes to TELEGRAM_TOPIC_ID. "per-project":
 # each git repo gets its own auto-created topic; non-repos use TELEGRAM_TOPIC_ID.
 : "${TELEGRAM_TOPIC_MODE:=shared}"
 : "${TELEGRAM_TOPIC_MAP:=$TELEGRAM_NOTIFY_HOME/topics.json}"
-
-# Config values are text a user edited by hand, so one must never reach
-# arithmetic unchecked: under `set -u` a non-numeric token aborts the process,
-# and a leading zero is read as octal. Validating once here is what lets every
-# consumer downstream treat these as plain decimal integers.
-sanitize_seconds() {
-  local v="${1:-}" fb="$2"
-  [[ "$v" =~ ^[0-9]+$ ]] && [ "${#v}" -le 9 ] || { printf '%s' "$fb"; return 0; }
-  v=$(( 10#$v ))
-  [ "$v" -gt 0 ] || { printf '%s' "$fb"; return 0; }
-  printf '%s' "$v"
-}
 
 : "${TELEGRAM_AWAY_TTL:=7200}"
 TELEGRAM_AWAY_TTL=$(sanitize_seconds "$TELEGRAM_AWAY_TTL" 7200)
@@ -583,7 +581,8 @@ llm_classify() {
 # when several tools are pending at once; `sidechain` marks a subagent-issued
 # call; AskUserQuestion fills question/options instead of a run target.
 pending_action() {
-  local transcript="$1" i out tries="${TELEGRAM_PENDING_TRIES:-17}"
+  local transcript="$1" i out tries
+  tries=$(sanitize_seconds "${TELEGRAM_PENDING_TRIES:-17}" 17)
   [ -r "$transcript" ] || return 0
   for ((i = 0; i < tries; i++)); do
     out=$(tail -n 400 "$transcript" 2>/dev/null | jq -Rsr '

@@ -58,5 +58,23 @@ out=$(pending_action "$FIXTURES/pending_with_string_user_content.jsonl")
 check "string-content user message does not break iteration (tool)" \
   "$(field "$out" '.tool // "EMPTY"')" "AskUserQuestion"
 
+# 5. TELEGRAM_PENDING_TRIES sanitization (Task 5 additional work). tries feeds
+# `for ((i = 0; i < tries; i++))`, a fatal arithmetic context under `set -u`:
+# a bad value must fall back rather than kill the hook. Exercised against a
+# fixture with nothing pending, so the loop runs to completion either way.
+errfile=$(mktemp -u)
+out=$(TELEGRAM_PENDING_TRIES=banana pending_action "$FIXTURES/stale_resolved_bash.jsonl" 2>"$errfile")
+check "TELEGRAM_PENDING_TRIES=banana still yields no pending action (falls back, no crash)" \
+  "$(field "$out" '.tool // "EMPTY"')" "EMPTY"
+check "TELEGRAM_PENDING_TRIES=banana produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+
+errfile=$(mktemp -u)
+out=$(TELEGRAM_PENDING_TRIES=003 pending_action "$FIXTURES/stale_resolved_bash.jsonl" 2>"$errfile")
+check "TELEGRAM_PENDING_TRIES=003 still yields no pending action (normalizes, no crash)" \
+  "$(field "$out" '.tool // "EMPTY"')" "EMPTY"
+check "TELEGRAM_PENDING_TRIES=003 produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
