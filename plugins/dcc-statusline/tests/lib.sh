@@ -40,3 +40,21 @@ dcc_cells() { # dcc_cells <string> -> DCC_CELLS
   done
   DCC_CELLS="$n"
 }
+
+# Test-only: a git that records every invocation and answers from fixtures, so a
+# test can assert how many times the render path actually shelled out. The caller
+# exports GIT_CALLS, GIT_PORCELAIN and GIT_ROOT to point it at its own files.
+dcc_stub_git() { # dcc_stub_git <bin-dir>
+  local bin="$1"
+  mkdir -p "$bin"
+  cat > "$bin/git" <<'SH'
+#!/usr/bin/env bash
+printf 'call\n' >> "$GIT_CALLS"
+case " $* " in
+  *" --porcelain=v2 "*)  cat "$GIT_PORCELAIN" ;;
+  *" --show-toplevel "*) printf '%s\n' "$GIT_ROOT" ;;
+esac
+SH
+  chmod +x "$bin/git"
+  PATH="$bin:$PATH"
+}

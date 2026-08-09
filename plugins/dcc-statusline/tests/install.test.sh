@@ -14,6 +14,9 @@ source "$HERE/lib.sh"
 fake="$(mktemp -d)"
 export DCC_FAKE_HOME="$fake"
 export DCC_STATUSLINE_HOME="$fake/.claude/dcc-statusline"
+# doctor's fixture-probe render goes through the real cache path; without this
+# it would write fp-nosession into the real machine's cache directory.
+export DCC_CACHE_HOME="$fake/cache"
 
 source "$HERE/../scripts/install.sh"
 
@@ -87,7 +90,7 @@ check "install writes the command" \
   "$(jq -r '.statusLine.command' "$fake/.claude-alt/settings.json")" \
   "bash ~/.claude/dcc-statusline/statusline.sh"
 check "install sets a refresh interval" \
-  "$(jq -r '.statusLine.refreshInterval' "$fake/.claude-alt/settings.json")" "60"
+  "$(jq -r '.statusLine.refreshInterval' "$fake/.claude-alt/settings.json")" "2"
 check "install preserves existing keys" \
   "$(jq -r '.permissions.allow | length' "$fake/.claude-alt/settings.json")" "0"
 
@@ -189,6 +192,28 @@ doc="$(doctor_run "$fake/.claude-alt")"
 check "doctor names an account that has no tint entry" \
   "$(printf '%s\n' "$doc" | grep -c 'warn - ~/.claude-alt has no accounts entry')" "1"
 
+# --- doctor: refresh interval drift ------------------------------------------
+# A stale refreshInterval is invisible: everything renders correctly, just
+# seconds after the terminal was resized. Only doctor can surface it.
+printf '{"statusLine":{"type":"command","command":"x","refreshInterval":60}}\n' \
+  > "$fake/.claude-alt/settings.json"
+doc="$(doctor_run "")"
+check "doctor names an account with a stale refresh interval" \
+  "$(printf '%s\n' "$doc" | grep -c "warn - $fake/.claude-alt has refreshInterval 60")" "1"
+
+printf '{"statusLine":{"type":"command","command":"x","refreshInterval":2}}\n' \
+  > "$fake/.claude-alt/settings.json"
+doc="$(doctor_run "")"
+check "doctor is silent when the refresh interval is current" \
+  "$(printf '%s\n' "$doc" | grep -c 'has refreshInterval')" "0"
+
+# An entry with no refreshInterval at all predates the key and must be caught.
+printf '{"statusLine":{"type":"command","command":"x"}}\n' \
+  > "$fake/.claude-alt/settings.json"
+doc="$(doctor_run "")"
+check "doctor names an account with no refresh interval" \
+  "$(printf '%s\n' "$doc" | grep -c "warn - $fake/.claude-alt has refreshInterval unset")" "1"
+
 # --- version agreement --------------------------------------------------------
 # The SessionStart sync hook fires on a difference between the plugin's VERSION
 # and the installed copy's. If VERSION drifts from the manifest the plugin gets
@@ -207,6 +232,9 @@ unset DCC_STATUSLINE_HOME
 # --- font detection at install ------------------------------------------------
 fake="$(mktemp -d)"
 export DCC_FAKE_HOME="$fake"
+# Re-pointed at the new $fake: the first one (and its cache subdir) was
+# already removed above, and the doctor call further down still renders.
+export DCC_CACHE_HOME="$fake/cache"
 mkdir -p "$fake/.claude"
 printf '{}' > "$fake/.claude/settings.json"
 
@@ -269,7 +297,11 @@ rm -rf "$seedhome"
 dochome="$(mktemp -d)"
 mkdir -p "$dochome/.claude"
 printf '{ "theme": "nonesuch" }' > "$dochome/.claude/dcc-statusline.json"
-out="$(DCC_FAKE_HOME="$dochome" dcc_doctor 2>&1)"
+# dcc_doctor renders a fixture payload, which writes into the cache. The
+# DCC_CACHE_HOME set further up points inside a temp root already removed, so
+# without re-pointing it here the render recreates that path and leaves it
+# behind on every run.
+out="$(DCC_CACHE_HOME="$dochome/cache" DCC_FAKE_HOME="$dochome" dcc_doctor 2>&1)"
 check "doctor names an unknown theme" "$(printf '%s' "$out" | grep -c 'nonesuch')" "1"
 rm -rf "$dochome"
 

@@ -8,6 +8,7 @@ set -uo pipefail
 # segment. Declaring them here, the way git.sh pre-declares DCC_GIT_*, closes
 # that gap regardless of whether the parse ever succeeds.
 P_EMAIL=""
+P_SESSION=""
 P_CWD=""
 P_MODEL=""
 P_EFFORT=""

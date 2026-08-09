@@ -9,6 +9,11 @@ set -uo pipefail
 
 DCC_SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DCC_COMMAND="bash ~/.claude/dcc-statusline/statusline.sh"
+# Terminal resize is not one of Claude Code's status line update triggers, so a
+# resized terminal keeps its old layout until the next run. The refresh timer is
+# the only thing that bounds that lag. Doctor compares against this same value,
+# so the writer and the checker cannot drift apart.
+DCC_REFRESH=2
 
 # dcc_doctor resolves the active account key exactly the way the render path
 # does, so a mismatch between the two can never be what the diagnostic misses.
@@ -65,7 +70,7 @@ _dcc_edit_settings() { # _dcc_edit_settings <dir> <jq-program>
 
 dcc_install_one() { # dcc_install_one <config-dir>
   _dcc_edit_settings "$1" \
-    '.statusLine = {type:"command",command:"'"$DCC_COMMAND"'",padding:0,refreshInterval:60}'
+    '.statusLine = {type:"command",command:"'"$DCC_COMMAND"'",padding:0,refreshInterval:'"$DCC_REFRESH"'}'
 }
 
 dcc_uninstall_one() { # dcc_uninstall_one <config-dir>
@@ -104,7 +109,7 @@ dcc_targets() { # dcc_targets <--all|"">
 
 dcc_doctor() {
   _dcc_paths
-  local rc=0 d cfg key probe rendered dcc_m dcc_w
+  local rc=0 d cfg key probe rendered dcc_m dcc_w iv
   cfg="$DCC_HOME_DIR/.claude/dcc-statusline.json"
   command -v jq  >/dev/null 2>&1 && printf 'ok   - jq is on PATH\n'  || { printf 'FAIL - jq is not on PATH\n';  rc=1; }
   command -v git >/dev/null 2>&1 && printf 'ok   - git is on PATH\n' || { printf 'warn - git is not on PATH; the git segment will be hidden\n'; }
@@ -156,6 +161,11 @@ dcc_doctor() {
     [ -n "$d" ] || continue
     if jq -e '.statusLine' "$d/settings.json" >/dev/null 2>&1; then
       printf 'ok   - installed in %s\n' "$d"
+      iv="$(jq -r '.statusLine.refreshInterval // "unset"' "$d/settings.json" 2>/dev/null)"
+      if [ "$iv" != "$DCC_REFRESH" ]; then
+        printf 'warn - %s has refreshInterval %s; a resize will lag. Run: /dcc-statusline install\n' \
+          "$d" "$iv"
+      fi
     else
       printf 'warn - not installed in %s\n' "$d"
     fi
