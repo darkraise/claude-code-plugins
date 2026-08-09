@@ -20,12 +20,11 @@ OFFSET_FILE="$UPDATES_DIR/offset"
 POLL_LOCK="$UPDATES_DIR/poll.lock"
 
 # The read side needs more than the send side does. Any missing piece disables
-# reading only -- notifications must keep working on a host without flock.
+# reading only -- notifications must keep working wherever the send side does.
 reply_enabled() {
   [ "${TELEGRAM_REPLY:-on}" = "on" ] || return 1
   [ -n "${TELEGRAM_ALLOWED_USERS:-}" ] || return 1
   command -v jq >/dev/null 2>&1 || return 1
-  command -v flock >/dev/null 2>&1 || return 1
   command -v curl >/dev/null 2>&1 || return 1
 }
 
@@ -35,6 +34,7 @@ reply_enabled() {
 user_allowed() {
   local id="${1:-}" list
   [ -n "$id" ] || return 1
+  [[ "$id" =~ ^[0-9]+$ ]] || return 1
   list=" $(printf '%s' "$TELEGRAM_ALLOWED_USERS" | tr ',' ' ') "
   case "$list" in *" $id "*) return 0 ;; *) return 1 ;; esac
 }
@@ -43,6 +43,38 @@ user_allowed() {
 file_mtime() {
   [ -e "$1" ] || return 1
   stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null
+}
+
+# flock is absent from Git Bash for Windows, a first-class target, so locking
+# falls back to an atomic mkdir. Unlike flock the kernel cannot release a mkdir
+# lock when its holder dies, hence the stale steal below.
+: "${TELEGRAM_LOCK_STALE:=60}"
+
+# with_lock <lockpath> <command...> -- runs the command while holding the lock
+# and propagates its exit code; returns 1 without running it if the lock is
+# held. Both branches run the command in a subshell so the two paths behave
+# identically.
+with_lock() {
+  local lock="$1"; shift
+  if [ -z "${TELEGRAM_LOCK_FORCE_MKDIR:-}" ] && command -v flock >/dev/null 2>&1; then
+    ( flock -n 9 || exit 1; "$@" ) 9>>"$lock.f"
+    return $?
+  fi
+  lock_mkdir_acquire "$lock" || return 1
+  ( "$@" ); local rc=$?
+  rmdir "$lock.d" 2>/dev/null
+  return $rc
+}
+
+lock_mkdir_acquire() {
+  local lock="$1" mt
+  mkdir "$lock.d" 2>/dev/null && return 0
+  # A holder that was killed leaves the directory behind forever, so a lock that
+  # has outlived any possible hold is assumed abandoned and taken.
+  mt=$(file_mtime "$lock.d") || return 1
+  [ $(( $(date +%s) - mt )) -gt "$TELEGRAM_LOCK_STALE" ] || return 1
+  rmdir "$lock.d" 2>/dev/null || return 1
+  mkdir "$lock.d" 2>/dev/null
 }
 
 updates_offset_get() {
@@ -90,7 +122,7 @@ updates_claim() {
   for f in "$SPOOL_DIR"/*.json; do
     [ -e "$f" ] || continue
     "$pred" "$f" 2>/dev/null || continue
-    claim="$UPDATES_DIR/claimed.$$.${RANDOM}.json"
+    claim="$UPDATES_DIR/claimed.$(basename "$f" .json).$$.json"
     mv "$f" "$claim" 2>/dev/null || continue
     cat "$claim" 2>/dev/null
     rm -f "$claim" 2>/dev/null

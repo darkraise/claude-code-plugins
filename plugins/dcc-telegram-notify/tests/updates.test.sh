@@ -11,22 +11,6 @@ TELEGRAM_ALLOWED_USERS="111,222"
 TELEGRAM_SPOOL_TTL=300
 API="https://example.invalid/botTEST"
 dbg() { :; }
-
-# Mock flock if it's not available (e.g., on Git Bash for Windows)
-if ! command -v flock >/dev/null 2>&1; then
-  export PATH="$TELEGRAM_NOTIFY_HOME/bin:$PATH"
-  mkdir -p "$TELEGRAM_NOTIFY_HOME/bin"
-  cat > "$TELEGRAM_NOTIFY_HOME/bin/flock" <<'EOF'
-#!/usr/bin/env bash
-# Mock flock: just execute the command without locking
-# flock [-s] fd [command ...]
-# We skip argument parsing and just run the last argument
-shift 2  # skip fd and command keyword
-exec "$@"
-EOF
-  chmod +x "$TELEGRAM_NOTIFY_HOME/bin/flock"
-fi
-
 # shellcheck disable=SC1090
 source "$LIB"
 
@@ -81,11 +65,11 @@ check "an unmatched update stays in the spool" \
 # feature silently duplicates work across sessions.
 updates_spool_put '{"update_id":12,"message":{"message_id":3,"text":"race"}}'
 match_race() { [ "$(jq -r '.message.text' "$1")" = "race" ]; }
-updates_claim match_race | jq -r '.message.text // ""' > /tmp/race_a.txt &
-updates_claim match_race | jq -r '.message.text // ""' > /tmp/race_b.txt &
+updates_claim match_race | jq -r '.message.text // ""' > "$TELEGRAM_NOTIFY_HOME/race_a.txt" &
+updates_claim match_race | jq -r '.message.text // ""' > "$TELEGRAM_NOTIFY_HOME/race_b.txt" &
 wait
-a=$(cat /tmp/race_a.txt 2>/dev/null)
-b=$(cat /tmp/race_b.txt 2>/dev/null)
+a=$(cat "$TELEGRAM_NOTIFY_HOME/race_a.txt" 2>/dev/null)
+b=$(cat "$TELEGRAM_NOTIFY_HOME/race_b.txt" 2>/dev/null)
 winners=0
 [ -n "${a:-}" ] && winners=$((winners + 1))
 [ -n "${b:-}" ] && winners=$((winners + 1))
@@ -101,6 +85,34 @@ check "a stale spool entry is swept" \
   "$([ -f "$SPOOL_DIR/21.json" ] && echo yes || echo no)" "no"
 check "a fresh spool entry survives the sweep" \
   "$([ -f "$SPOOL_DIR/20.json" ] && echo yes || echo no)" "yes"
+
+# --- with_lock ---------------------------------------------------------------
+LOCKP="$TELEGRAM_NOTIFY_HOME/t.lock"
+lock_probe() { printf 'ran'; }
+check "with_lock runs its command" "$(with_lock "$LOCKP" lock_probe)" "ran"
+lock_fail() { return 7; }
+with_lock "$LOCKP" lock_fail
+check "with_lock propagates the command's exit code" "$?" "7"
+check "with_lock leaves no lock behind" \
+  "$([ -d "$LOCKP.d" ] && echo yes || echo no)" "no"
+
+# The mkdir fallback is the path Windows takes, so force it everywhere.
+export TELEGRAM_LOCK_FORCE_MKDIR=1
+check "the mkdir fallback runs its command" "$(with_lock "$LOCKP" lock_probe)" "ran"
+check "the mkdir fallback releases the lock" \
+  "$([ -d "$LOCKP.d" ] && echo yes || echo no)" "no"
+
+# A held lock must be refused, not queued -- another waiter is already polling.
+mkdir "$LOCKP.d"
+with_lock "$LOCKP" lock_probe >/dev/null
+check "a held lock is refused" "$?" "1"
+
+# A lock left by a killed holder must not wedge the feature forever.
+touch -d "@$(( $(date +%s) - 300 ))" "$LOCKP.d" 2>/dev/null \
+  || touch -t "$(date -r $(( $(date +%s) - 300 )) +%Y%m%d%H%M.%S)" "$LOCKP.d"
+check "a stale lock is stolen" "$(with_lock "$LOCKP" lock_probe)" "ran"
+unset TELEGRAM_LOCK_FORCE_MKDIR
+rm -rf "$LOCKP.d" "$LOCKP.f"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
