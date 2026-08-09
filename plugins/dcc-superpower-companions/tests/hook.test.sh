@@ -32,8 +32,11 @@ for skill in superpowers:writing-plans superpowers:subagent-driven-development; 
     "$(jq -e . >/dev/null 2>&1 <<<"$out" && echo yes || echo no)" "yes"
   check "$skill: event name is PreToolUse" \
     "$(jq -r '.hookSpecificOutput.hookEventName // "MISSING"' <<<"$out" 2>/dev/null)" "PreToolUse"
-  check "$skill: decision is defer" \
-    "$(jq -r '.hookSpecificOutput.permissionDecision // "MISSING"' <<<"$out" 2>/dev/null)" "defer"
+  # permissionDecision must stay absent. "defer" in particular is print-mode
+  # only: interactive sessions ignore it with a warning, and non-interactive
+  # ones defer the Skill call itself so the skill never runs.
+  check "$skill: emits no permissionDecision" \
+    "$(jq -r '.hookSpecificOutput.permissionDecision // "ABSENT"' <<<"$out" 2>/dev/null)" "ABSENT"
   check "$skill: additionalContext is non-empty" \
     "$(jq -r '(.hookSpecificOutput.additionalContext // "") | length > 0' <<<"$out" 2>/dev/null)" "true"
 done
@@ -64,6 +67,12 @@ check "hooks.json registers a PreToolUse matcher on Skill" \
   "$(jq -r '.hooks.PreToolUse[0].matcher // "MISSING"' "$HOOKS" 2>/dev/null)" "Skill"
 check "hooks.json is synchronous (async must not be true)" \
   "$(jq -r '.hooks.PreToolUse[0].hooks[0].async // false' "$HOOKS" 2>/dev/null)" "false"
+# Hook commands default to PowerShell on Windows when Git Bash is absent, where
+# "bash" is not a command and ${CLAUDE_PLUGIN_ROOT} is not a variable. This key
+# forces the bash route, so such a machine gets Claude Code's actionable
+# "requires bash but Git Bash was not found" message instead.
+check "hooks.json forces the bash interpreter" \
+  "$(jq -r '.hooks.PreToolUse[0].hooks[0].shell // "MISSING"' "$HOOKS" 2>/dev/null)" "bash"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
