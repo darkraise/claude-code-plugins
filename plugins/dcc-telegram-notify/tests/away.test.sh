@@ -152,5 +152,61 @@ check "away_arm 008 arms 8 seconds ahead" \
   "$([ "$diff" -ge 3 ] && [ "$diff" -le 8 ] && echo yes || echo no)" "yes"
 away_disarm
 
+# --- sanitize_seconds: the single boundary validation (round 3) -------------
+# TELEGRAM_AWAY_TTL is user-edited config text. Rounds 1 and 2 each hardened
+# one consumer of a duration (parse_duration, then away_arm) and each round
+# left another untouched (format_duration, the --away announcement). This
+# validates once, where the config value is defaulted, so every downstream
+# consumer can trust it is already a plain decimal integer.
+check "sanitize_seconds falls back for non-numeric text" "$(sanitize_seconds banana 7200)" "7200"
+check "sanitize_seconds falls back for an empty string" "$(sanitize_seconds "" 7200)" "7200"
+check "sanitize_seconds falls back for zero" "$(sanitize_seconds 0 7200)" "7200"
+check "sanitize_seconds falls back for an all-zero value" "$(sanitize_seconds 00 7200)" "7200"
+check "sanitize_seconds falls back for a 10-digit number" "$(sanitize_seconds 1234567890 7200)" "7200"
+check "sanitize_seconds falls back for a negative number" "$(sanitize_seconds -5 7200)" "7200"
+check "sanitize_seconds normalizes a leading-zero value to decimal" "$(sanitize_seconds 0100 7200)" "100"
+check "sanitize_seconds passes a valid value through unchanged" "$(sanitize_seconds 7200 999)" "7200"
+
+# TELEGRAM_AWAY_TTL=banana: the bug this closes was printing "armed" while
+# nothing was armed (away_arm's return code was ignored). This implementation
+# never fails outright -- sanitize_seconds always falls back to the built-in
+# default -- so what must hold is that the flag it WROTE and the duration it
+# PRINTED agree with each other and with the sanitized default.
+home="$(mktemp -d)"; env="$(mktemp -u)"; errfile="$(mktemp -u)"
+out=$(TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" TELEGRAM_AWAY_TTL=banana bash "$SCRIPT" --away 2>"$errfile")
+status=$?
+check "TELEGRAM_AWAY_TTL=banana --away exits 0" "$status" "0"
+check "TELEGRAM_AWAY_TTL=banana --away produces zero bytes on stderr" "$(wc -c < "$errfile" | tr -d ' ')" "0"
+check "TELEGRAM_AWAY_TTL=banana --away actually writes the flag" \
+  "$([ -f "$home/away" ] && echo yes || echo no)" "yes"
+check "TELEGRAM_AWAY_TTL=banana --away reports what it did, not a phantom arming" \
+  "$out" "Away mode armed for 2h 0m. Permission prompts and questions will wait for a Telegram tap."
+exp=$(cat "$home/away" 2>/dev/null); now=$(date +%s); diff=$(( exp - now ))
+check "TELEGRAM_AWAY_TTL=banana --away arms the sanitized 7200s default" \
+  "$([ "$diff" -ge $((7200 - 5)) ] && [ "$diff" -le $((7200 + 15)) ] && echo yes || echo no)" "yes"
+
+# TELEGRAM_AWAY_TTL=0100: the bug this closes was arming 101s (decimal 101 via
+# octal misparse of "0100" plus overhead) while printing "1m 4s" (the
+# format_duration of the octal-misread 64s) -- an armed value and a printed
+# value that silently disagreed. Both must now be exactly 100s.
+home="$(mktemp -d)"; env="$(mktemp -u)"; errfile="$(mktemp -u)"
+out=$(TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" TELEGRAM_AWAY_TTL=0100 bash "$SCRIPT" --away 2>"$errfile")
+check "TELEGRAM_AWAY_TTL=0100 --away produces zero bytes on stderr" "$(wc -c < "$errfile" | tr -d ' ')" "0"
+exp=$(cat "$home/away" 2>/dev/null); now=$(date +%s); diff=$(( exp - now ))
+check "TELEGRAM_AWAY_TTL=0100 --away arms 100 decimal seconds, not octal 64" \
+  "$([ "$diff" -ge $((100 - 5)) ] && [ "$diff" -le $((100 + 15)) ] && echo yes || echo no)" "yes"
+check "TELEGRAM_AWAY_TTL=0100 --away prints the SAME duration it armed" \
+  "$out" "Away mode armed for 1m 40s. Permission prompts and questions will wait for a Telegram tap."
+
+# A well-formed TTL must still work exactly as before.
+home="$(mktemp -d)"; env="$(mktemp -u)"; errfile="$(mktemp -u)"
+out=$(TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" TELEGRAM_AWAY_TTL=7200 bash "$SCRIPT" --away 2>"$errfile")
+check "TELEGRAM_AWAY_TTL=7200 --away produces zero bytes on stderr" "$(wc -c < "$errfile" | tr -d ' ')" "0"
+exp=$(cat "$home/away" 2>/dev/null); now=$(date +%s); diff=$(( exp - now ))
+check "TELEGRAM_AWAY_TTL=7200 --away arms ~7200s" \
+  "$([ "$diff" -ge $((7200 - 5)) ] && [ "$diff" -le $((7200 + 15)) ] && echo yes || echo no)" "yes"
+check "TELEGRAM_AWAY_TTL=7200 --away prints 2h 0m" \
+  "$out" "Away mode armed for 2h 0m. Permission prompts and questions will wait for a Telegram tap."
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -117,8 +117,22 @@ seed_config
 # each git repo gets its own auto-created topic; non-repos use TELEGRAM_TOPIC_ID.
 : "${TELEGRAM_TOPIC_MODE:=shared}"
 : "${TELEGRAM_TOPIC_MAP:=$TELEGRAM_NOTIFY_HOME/topics.json}"
+
+# Config values are text a user edited by hand, so one must never reach
+# arithmetic unchecked: under `set -u` a non-numeric token aborts the process,
+# and a leading zero is read as octal. Validating once here is what lets every
+# consumer downstream treat these as plain decimal integers.
+sanitize_seconds() {
+  local v="${1:-}" fb="$2"
+  [[ "$v" =~ ^[0-9]+$ ]] && [ "${#v}" -le 9 ] || { printf '%s' "$fb"; return 0; }
+  v=$(( 10#$v ))
+  [ "$v" -gt 0 ] || { printf '%s' "$fb"; return 0; }
+  printf '%s' "$v"
+}
+
 : "${TELEGRAM_AWAY_TTL:=7200}"
-: "${TELEGRAM_AWAY_MAX:=604800}"
+TELEGRAM_AWAY_TTL=$(sanitize_seconds "$TELEGRAM_AWAY_TTL" 7200)
+TELEGRAM_AWAY_MAX=$(sanitize_seconds "${TELEGRAM_AWAY_MAX:-604800}" 604800)
 
 # Which notifications are allowed to send. Comma- or space-separated tokens:
 #   permission    a tool call is waiting for approval
@@ -802,9 +816,12 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
         }
       fi
       [ -n "$secs" ] || secs="$TELEGRAM_AWAY_TTL"
-      away_arm "$secs"
-      printf 'Away mode armed for %s. Permission prompts and questions will wait for a Telegram tap.\n' \
-        "$(format_duration "$secs")"
+      if away_arm "$secs"; then
+        printf 'Away mode armed for %s. Permission prompts and questions will wait for a Telegram tap.\n' \
+          "$(format_duration "$secs")"
+      else
+        printf 'Could not arm away mode: %s is not a usable duration.\n' "$secs"
+      fi
       ;;
     --back)
       away_disarm
