@@ -98,14 +98,58 @@ exp=$(cat "$home/away" 2>/dev/null); now=$(date +%s)
 check "--away -5h arms a flag with a FUTURE expiry" \
   "$([ -n "$exp" ] && [ "$exp" -gt "$now" ] && echo yes || echo no)" "yes"
 
-# Defence in depth in away_arm itself: even called directly with a junk
-# argument (bypassing parse_duration entirely), it must still arm with the
-# default TTL rather than aborting under `set -u`.
+# away_arm is reachable from a Telegram message, so a bad argument must be
+# REFUSED outright -- arming is a side effect, and only the caller (which has
+# already chosen a fallback via parse_duration) gets to decide what to do
+# about a bad value. Silently substituting the default here would arm a
+# duration nobody asked for.
 away_disarm
-away_arm "junk"
-exp=$(cat "$AWAY_FILE" 2>/dev/null); now=$(date +%s)
-check "away_arm with a junk argument still arms with a FUTURE expiry" \
+away_arm "junk"; status=$?
+check "away_arm with a non-numeric argument returns 1" "$status" "1"
+check "away_arm with a non-numeric argument writes no file" \
+  "$([ -f "$AWAY_FILE" ] && echo yes || echo no)" "no"
+
+# --- Leading-zero octal misparse (round 2 finding) --------------------------
+# Bash arithmetic reads a leading-zero numeral as octal: "017" is 15 in
+# decimal, and "008"/"009" contain digits invalid in octal and abort the shell
+# outright ("value too great for base"). parse_duration must normalize via
+# 10# before ANY arithmetic touches the value, and the exact numbers below are
+# the point -- 017h must be 17 hours (61200s), never the octal-misread 15h.
+check "008s normalizes to decimal 8" "$(parse_duration 008s)" "8"
+check "017h normalizes to decimal 17 hours" "$(parse_duration 017h)" "61200"
+check "009m normalizes to decimal 9 minutes" "$(parse_duration 009m)" "540"
+check "07h normalizes to decimal 7 hours" "$(parse_duration 07h)" "25200"
+check "an all-zero value is refused" "$(parse_duration 00)" ""
+check "an all-zero value with a suffix is refused" "$(parse_duration 000h)" ""
+
+# The subprocess path must show the same base-10 normalization: a wrong-but-
+# silent value (17h misread as 15h) is worse than a crash, because it looks
+# like it worked. Assert a delta RANGE, not an exact expiry, so a slow test
+# runner cannot flake this.
+home="$(mktemp -d)"; env="$(mktemp -u)"; errfile="$(mktemp -u)"
+TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" bash "$SCRIPT" --away 017h >/dev/null 2>"$errfile"
+check "--away 017h produces zero bytes on stderr" "$(wc -c < "$errfile" | tr -d ' ')" "0"
+exp=$(cat "$home/away" 2>/dev/null); now=$(date +%s); diff=$(( exp - now ))
+check "--away 017h arms 61200s ahead, not the octal-misread 54000s" \
+  "$([ "$diff" -ge $((61200 - 5)) ] && [ "$diff" -le $((61200 + 15)) ] && echo yes || echo no)" \
+  "yes"
+
+home="$(mktemp -d)"; env="$(mktemp -u)"; errfile="$(mktemp -u)"
+out=$(TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" bash "$SCRIPT" --away 008s 2>"$errfile")
+status=$?
+check "--away 008s exits 0" "$status" "0"
+check "--away 008s produces zero bytes on stderr" "$(wc -c < "$errfile" | tr -d ' ')" "0"
+exp=$(cat "$home/away" 2>/dev/null); now=$(date +%s)
+check "--away 008s arms a flag with a FUTURE expiry" \
   "$([ -n "$exp" ] && [ "$exp" -gt "$now" ] && echo yes || echo no)" "yes"
+
+# away_arm called directly with a leading-zero value must also normalize:
+# "008" is 8 seconds ahead, not a crash and not octal-truncated.
+away_disarm
+away_arm 008
+exp=$(cat "$AWAY_FILE" 2>/dev/null); now=$(date +%s); diff=$(( exp - now ))
+check "away_arm 008 arms 8 seconds ahead" \
+  "$([ "$diff" -ge 3 ] && [ "$diff" -le 8 ] && echo yes || echo no)" "yes"
 away_disarm
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

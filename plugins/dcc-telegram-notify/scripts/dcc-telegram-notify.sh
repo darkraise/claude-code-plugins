@@ -207,9 +207,12 @@ away_armed() {
 
 away_arm() {
   local secs="${1:-$TELEGRAM_AWAY_TTL}"
-  # Defence in depth: a non-numeric value here would abort the whole hook under
-  # `set -u`, so fall back rather than trusting the caller validated it.
-  [[ "$secs" =~ ^[0-9]+$ ]] || secs="$TELEGRAM_AWAY_TTL"
+  # Reachable from a Telegram message, so refuse outright rather than arm a
+  # duration nobody asked for -- the caller owns the fallback decision.
+  [[ "$secs" =~ ^[0-9]+$ ]] || return 1
+  [ "${#secs}" -le 9 ] || return 1
+  secs=$(( 10#$secs ))
+  [ "$secs" -gt 0 ] || return 1
   mkdir -p "$TELEGRAM_NOTIFY_HOME" 2>/dev/null || return 0
   printf '%s' "$(( $(date +%s) + secs ))" > "$AWAY_FILE" 2>/dev/null
   return 0
@@ -234,6 +237,10 @@ parse_duration() {
   # Bound the digit count before comparing: a value wider than the arithmetic can
   # hold makes `[` itself fail rather than returning a clean refusal.
   [ "${#n}" -le 9 ] || return 1
+  # Bash arithmetic reads a leading-zero literal as octal: "017" would become 15
+  # and "008" would abort the shell with "value too great for base". 10# forces
+  # base 10 and normalizes the value for every use below.
+  n=$(( 10#$n ))
   [ "$n" -gt 0 ] || return 1
   case "$unit" in
     h) secs=$(( n * 3600 )) ;;
