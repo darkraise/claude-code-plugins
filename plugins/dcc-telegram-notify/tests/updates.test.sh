@@ -102,6 +102,18 @@ check "the mkdir fallback runs its command" "$(with_lock "$LOCKP" lock_probe)" "
 check "the mkdir fallback releases the lock" \
   "$([ -d "$LOCKP.d" ] && echo yes || echo no)" "no"
 
+# A holder whose lock was stolen while it slept must not delete the new
+# holder's lock on release -- that would admit a third process alongside it.
+lock_mkdir_acquire "$LOCKP" "token-a"
+printf 'token-b' > "$LOCKP.d/owner"
+lock_mkdir_release "$LOCKP" "token-a"
+check "release by a stale token leaves the current holder's lock" \
+  "$([ -d "$LOCKP.d" ] && echo yes || echo no)" "yes"
+printf 'token-a' > "$LOCKP.d/owner"
+lock_mkdir_release "$LOCKP" "token-a"
+check "release by the current owner token removes the lock" \
+  "$([ -d "$LOCKP.d" ] && echo yes || echo no)" "no"
+
 # A held lock must be refused, not queued -- another waiter is already polling.
 mkdir "$LOCKP.d"
 with_lock "$LOCKP" lock_probe >/dev/null
@@ -113,6 +125,56 @@ touch -d "@$(( $(date +%s) - 300 ))" "$LOCKP.d" 2>/dev/null \
 check "a stale lock is stolen" "$(with_lock "$LOCKP" lock_probe)" "ran"
 unset TELEGRAM_LOCK_FORCE_MKDIR
 rm -rf "$LOCKP.d" "$LOCKP.f"
+
+# --- updates_poll ------------------------------------------------------------
+# A stub curl earlier on PATH than the real one returns canned getUpdates
+# payloads, so nothing here touches the network.
+STUB_DIR="$(mktemp -d)"
+cat > "$STUB_DIR/curl" <<'STUB'
+#!/usr/bin/env bash
+cat "$CURL_STUB_RESPONSE"
+STUB
+chmod +x "$STUB_DIR/curl"
+PATH="$STUB_DIR:$PATH"
+
+rm -f "$SPOOL_DIR"/*.json
+export CURL_STUB_RESPONSE="$STUB_DIR/resp.json"
+cat > "$CURL_STUB_RESPONSE" <<'JSON'
+{"ok":true,"result":[
+  {"update_id":100,"message":{"message_id":5,"text":"from an allowed user","from":{"id":111},"chat":{"id":-100}}},
+  {"update_id":101,"message":{"message_id":6,"text":"from a stranger","from":{"id":999},"chat":{"id":-100}}},
+  {"update_id":102,"callback_query":{"id":"cb1","data":"abc12345:0","from":{"id":222}}}
+]}
+JSON
+updates_offset_set 0
+updates_poll
+check "poll returns 0 on a good response" "$?" "0"
+check "allowed senders are spooled" \
+  "$([ -f "$SPOOL_DIR/100.json" ] && echo yes || echo no)" "yes"
+check "a stranger never reaches the spool" \
+  "$([ -f "$SPOOL_DIR/101.json" ] && echo yes || echo no)" "no"
+check "callback queries from allowed users are spooled" \
+  "$([ -f "$SPOOL_DIR/102.json" ] && echo yes || echo no)" "yes"
+# The offset must pass the FILTERED-OUT update too, or it is refetched forever.
+check "the offset advances past every update, filtered or not" \
+  "$(updates_offset_get)" "102"
+
+# A replayed identical response must not duplicate anything.
+updates_poll
+check "a replay adds no duplicate spool entries" \
+  "$(ls "$SPOOL_DIR" | wc -l | tr -d ' ')" "2"
+
+cat > "$CURL_STUB_RESPONSE" <<'JSON'
+{"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request"}
+JSON
+updates_poll
+check "a 409 tells the caller to stand down" "$?" "2"
+
+cat > "$CURL_STUB_RESPONSE" <<'JSON'
+not json at all
+JSON
+updates_poll
+check "an unparseable response is a plain failure" "$?" "1"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -60,21 +60,38 @@ with_lock() {
     ( flock -n 9 || exit 1; "$@" ) 9>>"$lock.f"
     return $?
   fi
-  lock_mkdir_acquire "$lock" || return 1
+  local token="$$-$BASHPID-$RANDOM-$(date +%s)"
+  lock_mkdir_acquire "$lock" "$token" || return 1
   ( "$@" ); local rc=$?
-  rmdir "$lock.d" 2>/dev/null
+  lock_mkdir_release "$lock" "$token"
   return $rc
 }
 
 lock_mkdir_acquire() {
-  local lock="$1" mt
-  mkdir "$lock.d" 2>/dev/null && return 0
+  local lock="$1" token="$2" mt
+  if mkdir "$lock.d" 2>/dev/null; then
+    printf '%s' "$token" > "$lock.d/owner" 2>/dev/null
+    return 0
+  fi
   # A holder that was killed leaves the directory behind forever, so a lock that
   # has outlived any possible hold is assumed abandoned and taken.
   mt=$(file_mtime "$lock.d") || return 1
   [ $(( $(date +%s) - mt )) -gt "$TELEGRAM_LOCK_STALE" ] || return 1
+  rm -f "$lock.d/owner" 2>/dev/null
   rmdir "$lock.d" 2>/dev/null || return 1
-  mkdir "$lock.d" 2>/dev/null
+  mkdir "$lock.d" 2>/dev/null || return 1
+  printf '%s' "$token" > "$lock.d/owner" 2>/dev/null
+  return 0
+}
+
+# Only the current owner may release. A holder that was stolen from would
+# otherwise delete the new holder's lock and admit a third process alongside it.
+lock_mkdir_release() {
+  local lock="$1" token="$2"
+  [ "$(cat "$lock.d/owner" 2>/dev/null)" = "$token" ] || return 0
+  rm -f "$lock.d/owner" 2>/dev/null
+  rmdir "$lock.d" 2>/dev/null
+  return 0
 }
 
 updates_offset_get() {
@@ -129,4 +146,50 @@ updates_claim() {
     return 0
   done
   return 1
+}
+
+# One locked fetch. The lock is non-blocking on purpose: if another waiter is
+# already filling the spool there is nothing to gain by queueing, so we return
+# and let the caller re-scan what that waiter files.
+#
+# Returns 0 on a completed poll, 1 on lock contention or any failure, and 2 on a
+# 409, which means another consumer (or a webhook) owns this bot token. There is
+# no winning that fight, so the caller stops rather than thrashing.
+updates_poll() {
+  mkdir -p "$SPOOL_DIR" 2>/dev/null || return 1
+  with_lock "$POLL_LOCK" _updates_poll_locked
+}
+
+_updates_poll_locked() {
+    local off resp ok max u uid from
+    off=$(updates_offset_get)
+    resp=$(curl -sS --max-time "$((TELEGRAM_REPLY_POLL + 10))" \
+      --data-urlencode "offset=$((off + 1))" \
+      --data-urlencode "timeout=${TELEGRAM_REPLY_POLL}" \
+      --data-urlencode 'allowed_updates=["message","callback_query"]' \
+      "${API}/getUpdates" 2>/dev/null) || exit 1
+
+    ok=$(jq -r '.ok // false' <<<"$resp" 2>/dev/null)
+    if [ "$ok" != "true" ]; then
+      [ "$(jq -r '.error_code // 0' <<<"$resp" 2>/dev/null)" = "409" ] && exit 2
+      exit 1
+    fi
+
+    # Advance past every update returned, including ones the allowlist drops.
+    # Leaving a filtered update below the offset would refetch it forever.
+    max=$(jq -r '[.result[].update_id] | max // empty' <<<"$resp" 2>/dev/null)
+
+    while IFS= read -r u; do
+      [ -n "$u" ] || continue
+      from=$(jq -r '(.message.from.id // .callback_query.from.id // empty)' <<<"$u" 2>/dev/null)
+      if ! user_allowed "$from"; then
+        uid=$(jq -r '.update_id // "?"' <<<"$u" 2>/dev/null)
+        dbg "   updates: dropped update $uid from unlisted user ${from:-none}"
+        continue
+      fi
+      updates_spool_put "$u"
+    done < <(jq -c '.result[]' <<<"$resp" 2>/dev/null)
+
+    [ -n "$max" ] && updates_offset_set "$max"
+    exit 0
 }
