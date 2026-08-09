@@ -199,3 +199,54 @@ _updates_poll_locked() {
     [ -n "$max" ] && updates_offset_set "$max"
     exit 0
 }
+
+# --- Matchers ----------------------------------------------------------------
+# Each takes a spool file path and reads the MATCH_* globals the waiter set, so
+# they satisfy the single-argument contract updates_claim calls them with.
+
+# A notification going to a group's main thread rather than a forum topic has no
+# thread id; "main" keeps the filename well-formed.
+last_marker_path() {
+  local chat="$1" topic="${2:-}"
+  [ -n "$topic" ] || topic=main
+  printf '%s/last/%s.%s' "$TELEGRAM_NOTIFY_HOME" "$chat" "$topic"
+}
+
+match_reply_to() {
+  local rid
+  rid=$(jq -r '.message.reply_to_message.message_id // empty' "$1" 2>/dev/null)
+  [ -n "$rid" ] && [ "$rid" = "${MATCH_REPLY_TO:-}" ]
+}
+
+match_bare_topic() {
+  local chat topic
+  jq -e '.message' "$1" >/dev/null 2>&1 || return 1
+  jq -e '.message.reply_to_message' "$1" >/dev/null 2>&1 && return 1
+  chat=$(jq -r '.message.chat.id // empty' "$1" 2>/dev/null)
+  topic=$(jq -r '.message.message_thread_id // empty' "$1" 2>/dev/null)
+  [ "$chat" = "${MATCH_CHAT:-}" ] || return 1
+  [ "${topic:-}" = "${MATCH_TOPIC:-}" ] || return 1
+  # Only the newest notification in this topic may absorb an unaddressed reply,
+  # so an older session cannot swallow an answer meant for a newer prompt.
+  [ "$(cat "$(last_marker_path "$MATCH_CHAT" "$MATCH_TOPIC")" 2>/dev/null)" = "${MATCH_REPLY_TO:-}" ]
+}
+
+match_callback() {
+  local d
+  d=$(jq -r '.callback_query.data // empty' "$1" 2>/dev/null)
+  [ -n "$d" ] && [ "${d%%:*}" = "${MATCH_NONCE:-}" ]
+}
+
+# Claimed before the reply matchers so arming or disarming from the chat is
+# never mistaken for an instruction to Claude.
+match_command() {
+  local chat text
+  chat=$(jq -r '.message.chat.id // empty' "$1" 2>/dev/null)
+  [ "$chat" = "${MATCH_CHAT:-}" ] || return 1
+  text=$(jq -r '.message.text // empty' "$1" 2>/dev/null)
+  case "$text" in /away*|/back*) return 0 ;; *) return 1 ;; esac
+}
+
+update_text() { jq -r '.message.text // ""' <<<"$1" 2>/dev/null; }
+update_callback_index() { jq -r '(.callback_query.data // "") | split(":")[1] // ""' <<<"$1" 2>/dev/null; }
+update_callback_id() { jq -r '.callback_query.id // ""' <<<"$1" 2>/dev/null; }

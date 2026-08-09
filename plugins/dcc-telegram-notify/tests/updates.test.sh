@@ -178,5 +178,68 @@ JSON
 updates_poll
 check "an unparseable response is a plain failure" "$?" "1"
 
+# --- matchers ----------------------------------------------------------------
+mk() { printf '%s' "$2" > "$SPOOL_DIR/$1.json"; printf '%s' "$SPOOL_DIR/$1.json"; }
+
+MATCH_REPLY_TO=42 MATCH_CHAT=-100 MATCH_TOPIC=7 MATCH_NONCE=abc12345
+
+f=$(mk 200 '{"update_id":200,"message":{"message_id":50,"chat":{"id":-100},"message_thread_id":7,"text":"go on","reply_to_message":{"message_id":42}}}')
+check "a reply to our notification matches" "$(match_reply_to "$f" && echo yes || echo no)" "yes"
+
+f=$(mk 201 '{"update_id":201,"message":{"message_id":51,"chat":{"id":-100},"message_thread_id":7,"text":"other","reply_to_message":{"message_id":41}}}')
+check "a reply to someone else's notification does not match" \
+  "$(match_reply_to "$f" && echo yes || echo no)" "no"
+
+# A bare topic message routes to whichever notification is currently newest
+# there, so "just type an answer" works without long-pressing to Reply.
+mkdir -p "$TELEGRAM_NOTIFY_HOME/last"
+printf '42' > "$(last_marker_path -100 7)"
+f=$(mk 202 '{"update_id":202,"message":{"message_id":52,"chat":{"id":-100},"message_thread_id":7,"text":"bare"}}')
+check "a bare topic message matches while we are the newest there" \
+  "$(match_bare_topic "$f" && echo yes || echo no)" "yes"
+printf '99' > "$(last_marker_path -100 7)"
+check "a bare topic message stops matching once superseded" \
+  "$(match_bare_topic "$f" && echo yes || echo no)" "no"
+printf '42' > "$(last_marker_path -100 7)"
+f=$(mk 203 '{"update_id":203,"message":{"message_id":53,"chat":{"id":-100},"message_thread_id":9,"text":"elsewhere"}}')
+check "a bare message in another topic does not match" \
+  "$(match_bare_topic "$f" && echo yes || echo no)" "no"
+
+# An explicit reply is match_reply_to's business even when its chat, topic, and
+# reply_to_message.message_id all line up with the newest marker; claiming it
+# here too would let a single update satisfy two matchers at once.
+f=$(mk 203b '{"update_id":2031,"message":{"message_id":58,"chat":{"id":-100},"message_thread_id":7,"text":"explicit","reply_to_message":{"message_id":42}}}')
+check "a reply carrying reply_to_message is not claimed as bare" \
+  "$(match_bare_topic "$f" && echo yes || echo no)" "no"
+
+check "the main thread renders as the literal name main" \
+  "$(basename "$(last_marker_path -100 "")")" "-100.main"
+check "a real topic id is preserved in the marker path" \
+  "$(basename "$(last_marker_path -100 7)")" "-100.7"
+
+f=$(mk 204 '{"update_id":204,"callback_query":{"id":"c","data":"abc12345:1","from":{"id":111}}}')
+check "a tap carrying our nonce matches" "$(match_callback "$f" && echo yes || echo no)" "yes"
+check "the button index is extracted" \
+  "$(update_callback_index "$(cat "$f")")" "1"
+f=$(mk 205 '{"update_id":205,"callback_query":{"id":"c","data":"zzz99999:0","from":{"id":111}}}')
+check "a tap carrying another prompt's nonce does not match" \
+  "$(match_callback "$f" && echo yes || echo no)" "no"
+
+f=$(mk 206 '{"update_id":206,"message":{"message_id":54,"chat":{"id":-100},"text":"/away 2h"}}')
+check "an away command matches anywhere in our chat" \
+  "$(match_command "$f" && echo yes || echo no)" "yes"
+check "the text of a claimed message is extracted" \
+  "$(update_text "$(cat "$f")")" "/away 2h"
+f=$(mk 207 '{"update_id":207,"message":{"message_id":55,"chat":{"id":-100},"text":"not a command"}}')
+check "an ordinary message is not a command" \
+  "$(match_command "$f" && echo yes || echo no)" "no"
+f=$(mk 208 '{"update_id":208,"message":{"message_id":56,"chat":{"id":-999},"text":"/away 2h"}}')
+check "an away command in another chat does not match" \
+  "$(match_command "$f" && echo yes || echo no)" "no"
+f=$(mk 209 '{"update_id":209,"message":{"message_id":57,"chat":{"id":-100},"text":"/back"}}')
+check "a back command matches anywhere in our chat" \
+  "$(match_command "$f" && echo yes || echo no)" "yes"
+rm -f "$SPOOL_DIR"/*.json
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
