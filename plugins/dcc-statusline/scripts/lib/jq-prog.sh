@@ -165,6 +165,7 @@ DCC_JQ_PROG='
   @sh "DCC_GLYPH_DIRTY=\($c.glyphs.dirty)",
   @sh "DCC_ACCOUNT_COLOR=\($c.accounts[$acct].color // "")",
   @sh "P_EMAIL=\(str(($who[0].oauthAccount.emailAddress)? // null))",
+  @sh "P_SESSION=\(str(($p.session_id)? // null))",
   @sh "P_CWD=\(str((($p.workspace.current_dir)? // ($p.cwd)?) // null))",
   @sh "P_MODEL=\(str(($p.model.display_name)? // null))",
   @sh "P_EFFORT=\(str(($p.effort.level)? // null))",

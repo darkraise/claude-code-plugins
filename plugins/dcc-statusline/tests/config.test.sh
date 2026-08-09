@@ -238,4 +238,8 @@ check "a non-string label falls back"     "$DCC_L_5H"       "5h"
 check "a bad label is not a config error" "$DCC_CONFIG_BAD" "0"
 rm -f "$cfg"
 
+# session_id keys the per-session cache fingerprint, so the parse has to carry it.
+dcc_parse_all "$(cat "$HERE/fixtures/full.json")" /dev/null /dev/null
+check "the parse carries the session id" "$P_SESSION" "abc123"
+
 finish

@@ -95,5 +95,43 @@ case "$DCC_CACHE_KEY" in
 esac
 check "a key holds no path or space characters" "$form" "safe"
 
+# --- event-driven runs bypass the TTL -----------------------------------------
+export GIT_PORCELAIN="$HERE/fixtures/porcelain-dirty.txt"
+P_SESSION="sess-1"; P_CTX_TOK="1000"; P_COST="0.50"
+
+dcc_cache_event
+check "a session seen for the first time forces a refresh" "$DCC_CACHE_FORCE" "1"
+
+: > "$GIT_CALLS"
+DCC_NOW=3000
+dcc_git_cached "$tmp/repo"
+check "a forced run invokes git despite an empty cache" "$(calls)" "2"
+
+dcc_cache_event
+check "an unchanged payload does not force a refresh" "$DCC_CACHE_FORCE" "0"
+: > "$GIT_CALLS"
+DCC_NOW=3001
+dcc_git_cached "$tmp/repo"
+check "an idle tick serves the cache" "$(calls)" "0"
+
+P_CTX_TOK="2000"
+dcc_cache_event
+check "an advanced token count forces a refresh" "$DCC_CACHE_FORCE" "1"
+: > "$GIT_CALLS"
+DCC_NOW=3002
+dcc_git_cached "$tmp/repo"
+check "a forced run refreshes inside the TTL" "$(calls)" "2"
+
+# A second session must keep its own fingerprint, or two sessions on one
+# repository force each other to refresh on every single tick.
+P_SESSION="sess-2"
+dcc_cache_event
+check "a second session starts with its own fingerprint" "$DCC_CACHE_FORCE" "1"
+dcc_cache_event
+check "the second session then settles" "$DCC_CACHE_FORCE" "0"
+P_SESSION="sess-1"
+dcc_cache_event
+check "the first session is undisturbed by the second" "$DCC_CACHE_FORCE" "0"
+
 rm -rf "$tmp"
 finish

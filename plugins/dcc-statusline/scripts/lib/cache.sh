@@ -101,3 +101,20 @@ dcc_git_cached() { # dcc_git_cached <dir> -> git globals; non-zero outside a rep
   _dcc_cache_write "$file" 0
   return 1
 }
+
+dcc_cache_event() { # -> DCC_CACHE_FORCE=1 when the payload advanced since the last run
+  local file fp prev=""
+  DCC_CACHE_FORCE=0
+  dcc_cache_dir
+  # With nowhere to remember the previous payload, every run is treated as an
+  # event: correct, just not cheap.
+  [ -n "$DCC_CACHE_DIR" ] || { DCC_CACHE_FORCE=1; return 0; }
+  dcc_cache_key "${P_SESSION:-nosession}"
+  file="$DCC_CACHE_DIR/fp-$DCC_CACHE_KEY"
+  fp="${P_CTX_TOK:-}|${P_COST:-}"
+  [ -r "$file" ] && read -r prev < "$file"
+  [ "$fp" = "$prev" ] && return 0
+  DCC_CACHE_FORCE=1
+  printf '%s\n' "$fp" > "$file" 2>/dev/null || true
+  return 0
+}
