@@ -307,8 +307,8 @@ DCC_CACHE_TTL="${DCC_CACHE_TTL:-10}"
 DCC_CACHE_DIR=""
 DCC_CACHE_KEY=""
 DCC_CACHE_REPO=0
-# Set by dcc_cache_event, added below in Task 3. Declared here so a render that
-# never calls it still has a defined value under set -u.
+# Pre-declared because a render that never sets the force-refresh flag would
+# otherwise abort under set -u the moment the cache is consulted.
 DCC_CACHE_FORCE=0
 
 dcc_cache_dir() { # -> DCC_CACHE_DIR, empty when the directory cannot be used
