@@ -133,13 +133,19 @@ updates_sweep() {
 # Claim the first spooled update satisfying <predicate_fn>, which is called with
 # the spool file path. The claim is a rename(2), which is atomic: two waiters
 # racing for one update cannot both win, because the loser's mv hits an
-# already-vanished source.
+# already-vanished source. That guarantee only holds if the two waiters target
+# different destinations, though -- $$ is the invoking shell's PID and is
+# shared by every subshell it forks, so two claimers running as sibling
+# subshells of the same shell would both build the identical destination name
+# and both successfully mv+cat the same file. $BASHPID is set per subshell, so
+# it is what actually distinguishes them; $RANDOM guards the remaining case of
+# two genuinely separate processes racing in the same PID slot.
 updates_claim() {
   local pred="$1" f claim
   for f in "$SPOOL_DIR"/*.json; do
     [ -e "$f" ] || continue
     "$pred" "$f" 2>/dev/null || continue
-    claim="$UPDATES_DIR/claimed.$(basename "$f" .json).$$.json"
+    claim="$UPDATES_DIR/claimed.$(basename "$f" .json).${BASHPID:-$$}.$RANDOM.json"
     mv "$f" "$claim" 2>/dev/null || continue
     cat "$claim" 2>/dev/null
     rm -f "$claim" 2>/dev/null
