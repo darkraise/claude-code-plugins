@@ -267,8 +267,14 @@ parse_duration() {
 
 API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
 
+# The read side lives in its own library so it can be tested without a session
+# in play. Sourced after API/config so it inherits both.
+TELEGRAM_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+# shellcheck disable=SC1090
+[ -r "$TELEGRAM_LIB_DIR/updates.sh" ] && . "$TELEGRAM_LIB_DIR/updates.sh"
+
 # Per-notification routing state, set by main(); defaults keep --test on the shared topic.
-REPO_KEY=""; REPO_NAME=""; SEND_TOPIC=""
+REPO_KEY=""; REPO_NAME=""; SEND_TOPIC=""; SEND_KEYBOARD=""
 
 # Opt-in diagnostics: set TELEGRAM_DEBUG=1 to append a trace of each hook firing.
 TELEGRAM_DEBUG_LOG="${TELEGRAM_DEBUG_LOG:-$TELEGRAM_NOTIFY_HOME/debug.log}"
@@ -377,6 +383,7 @@ send() {
   )
   # A "topic" in a forum-enabled group is addressed by its thread id.
   [ -n "$topic" ] && args+=(--data-urlencode "message_thread_id=${topic}")
+  [ -n "$SEND_KEYBOARD" ] && args+=(--data-urlencode "reply_markup=${SEND_KEYBOARD}")
   # Feed the (possibly multi-byte) text via stdin, not an argv value: Git Bash
   # re-encodes command-line arguments to the legacy Windows code page when it
   # spawns native curl.exe, mangling UTF-8 (emoji become "?", "·" becomes a lone
@@ -400,6 +407,71 @@ send_message() {
   fi
   dbg "   send: ok=$(jq -r '.ok // "?"' <<<"$resp" 2>/dev/null) desc=$(jq -r '.description // ""' <<<"$resp" 2>/dev/null) topic=${SEND_TOPIC:-shared}"
   printf '%s' "$resp"
+}
+
+# --- Inline keyboards --------------------------------------------------------
+# Telegram caps callback_data at 64 bytes, so a button carries only a nonce and
+# a button index; the chat, topic, message id, session and option labels live in
+# pending/<nonce>.json beside the rest of the state.
+
+kb_row() {
+  local a parts=()
+  for a in "$@"; do
+    parts+=("$(jq -nc --arg t "${a%%|*}" --arg d "${a#*|}" '{text:$t,callback_data:$d}')")
+  done
+  local IFS=,
+  printf '[%s]' "${parts[*]}"
+}
+
+kb() { local IFS=,; printf '{"inline_keyboard":[%s]}' "$*"; }
+
+mint_nonce() {
+  local n
+  n=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom 2>/dev/null | head -c 8)
+  [ ${#n} -eq 8 ] || n=$(printf '%08x' $(( (RANDOM << 15 | RANDOM) & 0xffffffff )))
+  printf '%s' "$n"
+}
+
+PENDING_DIR="$TELEGRAM_NOTIFY_HOME/pending"
+
+pending_put() {
+  mkdir -p "$PENDING_DIR" 2>/dev/null || return 0
+  printf '%s' "$2" > "$PENDING_DIR/$1.json" 2>/dev/null
+  return 0
+}
+pending_get() { cat "$PENDING_DIR/$1.json" 2>/dev/null; return 0; }
+pending_rm()  { rm -f "$PENDING_DIR/$1.json" 2>/dev/null; return 0; }
+
+# Written at send time so a bare message typed into a topic can be routed to the
+# newest notification there without the user long-pressing to Reply.
+record_last() {
+  local p
+  p=$(last_marker_path "$TELEGRAM_CHAT_ID" "${SEND_TOPIC:-}")
+  mkdir -p "$(dirname "$p")" 2>/dev/null || return 0
+  printf '%s' "$1" > "$p" 2>/dev/null
+  return 0
+}
+
+# Clears the spinner on the phone. Telegram shows the text as a brief toast.
+answer_callback() {
+  curl -sS --max-time 10 \
+    --data-urlencode "callback_query_id=$1" \
+    --data-urlencode "text=${2:-}" \
+    "${API}/answerCallbackQuery" >/dev/null 2>&1
+  return 0
+}
+
+# Rewrites a resolved prompt so the message records its own outcome and its
+# buttons cannot be tapped a second time.
+edit_message() {
+  local mid="$1" html="$2"
+  printf '%s' "$html" | curl -sS --max-time 10 \
+    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+    --data-urlencode "message_id=${mid}" \
+    --data-urlencode "text@-" \
+    --data-urlencode "parse_mode=HTML" \
+    "${API}/editMessageText" >/dev/null 2>&1
+  return 0
 }
 
 # Last assistant message that actually contains text: the final one is often a
