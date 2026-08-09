@@ -297,7 +297,11 @@ rm -rf "$seedhome"
 dochome="$(mktemp -d)"
 mkdir -p "$dochome/.claude"
 printf '{ "theme": "nonesuch" }' > "$dochome/.claude/dcc-statusline.json"
-out="$(DCC_FAKE_HOME="$dochome" dcc_doctor 2>&1)"
+# dcc_doctor renders a fixture payload, which writes into the cache. The
+# DCC_CACHE_HOME set further up points inside a temp root already removed, so
+# without re-pointing it here the render recreates that path and leaves it
+# behind on every run.
+out="$(DCC_CACHE_HOME="$dochome/cache" DCC_FAKE_HOME="$dochome" dcc_doctor 2>&1)"
 check "doctor names an unknown theme" "$(printf '%s' "$out" | grep -c 'nonesuch')" "1"
 rm -rf "$dochome"
 
