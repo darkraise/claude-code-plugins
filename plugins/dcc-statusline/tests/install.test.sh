@@ -87,7 +87,7 @@ check "install writes the command" \
   "$(jq -r '.statusLine.command' "$fake/.claude-alt/settings.json")" \
   "bash ~/.claude/dcc-statusline/statusline.sh"
 check "install sets a refresh interval" \
-  "$(jq -r '.statusLine.refreshInterval' "$fake/.claude-alt/settings.json")" "60"
+  "$(jq -r '.statusLine.refreshInterval' "$fake/.claude-alt/settings.json")" "2"
 check "install preserves existing keys" \
   "$(jq -r '.permissions.allow | length' "$fake/.claude-alt/settings.json")" "0"
 
@@ -188,6 +188,28 @@ check "doctor renders a fixture payload" \
 doc="$(doctor_run "$fake/.claude-alt")"
 check "doctor names an account that has no tint entry" \
   "$(printf '%s\n' "$doc" | grep -c 'warn - ~/.claude-alt has no accounts entry')" "1"
+
+# --- doctor: refresh interval drift ------------------------------------------
+# A stale refreshInterval is invisible: everything renders correctly, just
+# seconds after the terminal was resized. Only doctor can surface it.
+printf '{"statusLine":{"type":"command","command":"x","refreshInterval":60}}\n' \
+  > "$fake/.claude-alt/settings.json"
+doc="$(doctor_run "")"
+check "doctor names an account with a stale refresh interval" \
+  "$(printf '%s\n' "$doc" | grep -c "warn - $fake/.claude-alt has refreshInterval 60")" "1"
+
+printf '{"statusLine":{"type":"command","command":"x","refreshInterval":2}}\n' \
+  > "$fake/.claude-alt/settings.json"
+doc="$(doctor_run "")"
+check "doctor is silent when the refresh interval is current" \
+  "$(printf '%s\n' "$doc" | grep -c 'has refreshInterval')" "0"
+
+# An entry with no refreshInterval at all predates the key and must be caught.
+printf '{"statusLine":{"type":"command","command":"x"}}\n' \
+  > "$fake/.claude-alt/settings.json"
+doc="$(doctor_run "")"
+check "doctor names an account with no refresh interval" \
+  "$(printf '%s\n' "$doc" | grep -c "warn - $fake/.claude-alt has refreshInterval unset")" "1"
 
 # --- version agreement --------------------------------------------------------
 # The SessionStart sync hook fires on a difference between the plugin's VERSION
