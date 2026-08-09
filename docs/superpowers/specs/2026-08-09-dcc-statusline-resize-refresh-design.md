@@ -91,9 +91,13 @@ parameter expansion. Hashing would need a fork and the render path has no budget
 for one.
 
 **Format.** Line 1 is the epoch second the cache was written. Lines 2..n are the
-collected fields (`branch`, `ahead`, `behind`, `staged`, `unstaged`, `untracked`,
-`dirty`, `root`), one `name=value` per line. The final line is the literal
-sentinel `END`.
+collected fields (`repo`, `branch`, `ahead`, `behind`, `staged`, `unstaged`,
+`untracked`, `dirty`, `root`), one `name=value` per line. The final line is the
+literal sentinel `END`.
+
+`repo=0` records that the directory is not a repository. Caching the negative
+matters as much as the positive: without it, every tick in a non-repository
+directory pays the `git status` fork that establishes the same non-answer.
 
 **Reading.** A `while read` loop over a redirect, compared against
 `printf -v now '%(%s)T' -1`. Both are builtins, so a cache hit costs no process.
@@ -172,7 +176,8 @@ New cases, in the existing `tests/` style with a fake `TMPDIR`:
 - A file missing its `END` sentinel is treated as a miss.
 - A changed fingerprint forces a refresh inside the TTL.
 - An unchanged fingerprint inside the TTL serves the cache.
-- A directory outside a repository caches nothing and keeps returning non-zero.
+- A directory outside a repository caches `repo=0`, keeps returning non-zero,
+  and runs no git on the following tick.
 - `doctor` warns when an account's `refreshInterval` is not 2, and is silent at 2.
 
 Git invocation counting is done with a stub `git` earlier on `PATH` that appends
