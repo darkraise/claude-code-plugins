@@ -5,6 +5,16 @@
 # exactly: one jq, two git, two timeout wrappers. A stray $(date +%s) added to
 # the render path would pass every rendering assertion and cost 10-20ms per
 # keystroke; it fails here and nowhere else.
+#
+# This measures the cold-cache path: one collect, one cache write. The cache
+# directory is pointed at a temp dir this file owns and pre-creates, because
+# mkdir is not among the shims below, so an absent cache directory would make
+# every render fail closed rather than exercise the git calls being counted.
+# Pointing it elsewhere -- or leaving it to default to the real machine's
+# $TMPDIR/dcc-statusline/ -- would let a warm entry left by another test (or
+# a previous run of this file, since the clock below is frozen and a frozen
+# stamp never ages out) silently turn this into a cache-hit render that
+# reports zero git calls instead of failing loudly.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib.sh"
@@ -38,6 +48,12 @@ check "the real timeout exists" "$([ -n "$REAL_TIMEOUT" ] && echo yes)" "yes"
 shims="$(mktemp -d)"
 log="$shims/calls.log"
 : > "$log"
+
+# Created now, with the real mkdir, before PATH is restricted to the shims
+# below -- dcc_cache_dir's own mkdir would otherwise be unreachable and the
+# cache would disengage instead of being measured.
+export DCC_CACHE_HOME="$shims/cachehome"
+mkdir -p "$DCC_CACHE_HOME/dcc-statusline"
 
 make_shim() { # make_shim <name> <real-path>
   # The shebang is the real bash by absolute path: /usr/bin/env would search

@@ -3,8 +3,10 @@
 # or four when the frame is enabled.
 #
 # Process budget: one jq on a cache hit, plus two git and the timeout wrappers
-# when the git cache misses or the payload shows an event-driven run. Nothing in
-# this file may use $(...) -- see the note in lib/color.sh.
+# when the git cache misses or the payload shows an event-driven run, plus a
+# one-time mkdir on whichever render first creates the cache directory on a
+# given machine. Nothing in this file may use $(...) -- see the note in
+# lib/color.sh.
 set -uo pipefail
 
 # Without a UTF-8 locale bash measures and slices bytes, so a three-byte box

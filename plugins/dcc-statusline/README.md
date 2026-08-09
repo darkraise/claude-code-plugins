@@ -144,8 +144,10 @@ nothing.
 
 To keep that rate affordable, git state is cached under
 `$TMPDIR/dcc-statusline/` for ten seconds, and refreshed immediately whenever
-the session payload shows a new assistant message rather than an idle timer
-tick. Deleting that directory is safe and forces a fresh collect.
+the payload's context-token count or cost differs from the previous run --
+a proxy for the session having advanced, rather than an idle timer tick
+repeating the same state. Deleting that directory is safe and forces a fresh
+collect.
 
 ## Configuration
 

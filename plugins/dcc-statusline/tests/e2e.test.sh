@@ -26,6 +26,11 @@ cp "$F/claude.json" "$fakehome/.claude/.claude.json"
 export HOME="$fakehome"
 export CLAUDE_CONFIG_DIR="$fakehome/.claude"
 
+# Isolated so this file's renders never touch the real machine's
+# $TMPDIR/dcc-statusline/ -- warming it here would leave a fresh entry behind
+# for whichever test runs next, budget.test.sh included.
+export DCC_CACHE_HOME="$fakehome/cache"
+
 out="$(bash "$SCRIPT" < "$F/full.json" | strip_ansi)"
 line1="$(printf '%s\n' "$out" | sed -n 1p)"
 line2="$(printf '%s\n' "$out" | sed -n 2p)"
@@ -318,9 +323,9 @@ check "an absent COLUMNS still shows the full path" \
 rm -rf "$fakehome"
 
 # --- the render path goes through the cache -----------------------------------
-# Proving it end to end rather than by unit test: the wiring is the whole point,
-# and a render that quietly still calls dcc_git_collect would pass every test in
-# cache.test.sh while costing two git calls every two seconds in the field.
+# Proving it end to end rather than by unit test: a render that quietly still
+# calls dcc_git_collect would pass every test in cache.test.sh while costing
+# two git calls every two seconds in the field.
 cachetmp="$(mktemp -d)"
 
 render_twice() { # -> the git call count across two identical renders
