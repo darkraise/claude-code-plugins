@@ -48,17 +48,30 @@ dispatch, including all reviewers.
    agent instead.
 3. Record the agent identity from the dispatch result, exactly as superpowers
    requires. Fix rounds 1 to 3 resume this agent.
-4. Note the assignment in the ledger superpowers already owns at
-   `.superpowers/sdd/<plan-basename>/progress.md`:
+4. Note the assignment in the ledger superpowers already owns. Resolve its
+   directory the way superpowers does — run its
+   `scripts/sdd-workspace PLAN_FILE` and use the path it prints — rather than
+   assuming a layout. The ledger is `progress.md` inside that directory.
 
    ```
    Task <N>: implementer <agent> (assigned)
    ```
 
-   Never create a competing ledger. Never use the reserved verbs `complete`,
-   `fix round`, `parked`, or `BLOCKED` in lines you add: superpowers' crash
-   recovery keys on `Task <N>: complete`, and a line it misreads costs a
-   re-dispatch of finished work.
+   Never create a competing ledger. Superpowers owns five `Task <N>:` verbs —
+   `complete`, `fix round`, `minor (deferred)`, `parked`, and `BLOCKED` — and
+   no line you author may start with one of them. Its crash recovery keys on
+   `Task <N>: complete`, and its final whole-branch review is pointed at the
+   `minor (deferred)` and `parked` lines for triage, so a line either of them
+   misreads costs a re-dispatch of finished work or a bogus merge blocker.
+   Extending a line superpowers itself writes is a different act and is allowed
+   in exactly one place, described under Escalate.
+
+   `Task <N>: implementer <agent> (assigned)` is the only line you add before
+   the task's first review. Add it once, right after dispatch.
+
+`sdd-workspace` prints a bare path, but `task-brief` does not — it prints
+`wrote <path>: <N> lines`. Read the brief path out of that line; do not pipe
+`task-brief`'s output into a dispatch prompt as if it were a filename.
 
 ## Escalate
 
@@ -77,11 +90,29 @@ Escalation does **not** apply to fix rounds 1 to 3. Those resume the original
 agent, which preserves its model, its effort, and its context. Re-dispatching a
 different tier there discards exactly what superpowers is preserving.
 
-Record each escalation in the ledger:
+Record each escalation **inside** superpowers' own fix-round line, by appending
+one clause to the line it already writes at the end of the round:
 
 ```
-Task <N>: implementer <new-agent> (escalated from <old-agent>, round <R>)
+Task <N>: fix round 4/5 (1 addressed, 1 open - <one-liner>; commits <a7>..<b7>; escalated <old-agent> -> <new-agent>)
 ```
+
+Do not write a separate escalation line. Superpowers' crash recovery reads a
+task's *last* ledger line and treats a task whose last line is a fix round as
+mid-loop, to be resumed at the next round. Any line of your own that lands after
+a fix-round line hides it, and a controller resuming after compaction reads the
+task as never started, then re-dispatches work that is already done. Folding the
+clause in keeps a fix-round line last at every moment, so the task recovers
+exactly as it would under vanilla superpowers — including a crash partway
+through round 4, where the last line is still `fix round 3/5` and the loop
+resumes at round 4. The escalated agent does not need its own line to survive a
+crash: the ladder is deterministic, so the round number and the original
+assignment re-derive it.
+
+A BLOCKED-handler escalation has no fix-round line to extend, because it happens
+outside the fix loop. Superpowers records nothing there either, so record
+nothing: re-dispatch on the successor and let the next line the loop writes
+carry the state.
 
 When the ladder is exhausted at `impl-fable-max`, which has no successor, report
 BLOCKED through superpowers' existing contract. Do not loop.
@@ -92,7 +123,7 @@ BLOCKED through superpowers' existing contract. Do not loop.
 |-----------|----------|
 | Task has no `**Implementer:**` line | Score it with the rubric in `reference/ladder.md`, dispatch, and record `Task <N>: implementer <agent> (scored at dispatch)` |
 | The line names an agent with no definition file | Stop and ask your human partner. Never fall back silently |
-| The model is unavailable on this account | Substitute the same effort one model down, state the substitution in the ledger and to your partner, and continue |
+| The model is unavailable on this account | Substitute the same effort one model down, state the substitution in the ledger and to your partner, and continue. From Sonnet there is no such rung — stop and ask instead |
 | Escalation exhausted | Report BLOCKED per superpowers |
 
 The silent-fallback rule matters more than it looks. If a bad agent name quietly
@@ -102,3 +133,9 @@ expensive-model failure superpowers' Model Selection section exists to prevent.
 
 The unavailable-model row exists because Fable is not on every account. Drop the
 model one rung and keep the effort. State it; never substitute silently.
+
+That substitution runs out below Sonnet. Haiku ships in one flavour with no
+effort variants, so "same effort, one model down" has no target from a
+`impl-sonnet-*` agent, and dropping to `impl-haiku` would silently discard the
+effort level the score asked for. If Sonnet itself is unavailable, say so and
+ask your partner rather than inventing a rung.

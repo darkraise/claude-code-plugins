@@ -23,10 +23,14 @@ case "$skill" in
     ;;
 esac
 
+# No permissionDecision: the field is optional, and this hook has no opinion on
+# whether the skill may run. Setting "defer" specifically is harmful: it is a
+# print-mode-only value, ignored with a warning in an interactive session, and
+# in a non-interactive one (claude -p, the SDK, CI) it defers the Skill call
+# itself, so the skill never executes.
 jq -n --arg c "$context" '{
   hookSpecificOutput: {
     hookEventName: "PreToolUse",
-    permissionDecision: "defer",
     additionalContext: $c
   }
 }'

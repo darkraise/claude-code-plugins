@@ -35,6 +35,35 @@ always reach the same agent.
 12 impl-fable-max
 ```
 
+### One floor overrides the total
+
+**A task scoring 3 on spec completeness never assigns below `impl-opus-low`,
+whatever its total.** Spec 3 means prose only with the approach undecided, which
+is superpowers' definition of a design-judgment task: "Requires design judgment
+or broad codebase understanding -> most capable model." Without the floor, a
+single-file, self-contained, low-risk design task scores 3 + 0 + 0 + 1 = 4 and
+lands on `impl-sonnet-xhigh` — more thinking thrown at a model that was not
+asked to decide anything.
+
+The floor is still deterministic, so two planners scoring a task identically
+reach the same agent. It raises; it never lowers.
+
+### What the range actually reaches
+
+The table covers 0 to 12, but a plan written to superpowers:writing-plans does
+not spread evenly across it. That skill bans placeholders and requires the real
+code in every code step, so a compliant task scores 0 or 1 on spec completeness
+almost by construction. Totals therefore sit roughly two points lower than the
+axis count suggests, and initial assignments cluster in the 2 to 8 band —
+Sonnet and lower Opus.
+
+That is the intended outcome, not a defect to correct for. It matches
+superpowers' own Model Selection rule that a task whose plan text contains the
+code to write is transcription plus testing, and takes the cheapest tier. The
+top of the table is reached mainly by escalation, when a task proves harder than
+its plan text showed. Do not inflate an axis to land on a tier that feels right;
+the ladder is what handles a task the plan under-described.
+
 ## Escalation table
 
 Escalation changes model before it changes effort, because an implementer that
@@ -70,6 +99,6 @@ Every successor has a strictly higher rank, so the graph is acyclic and every
 walk ends at `impl-fable-max`. `tests/ladder.test.sh` asserts this by walking
 the table rather than trusting the argument.
 
-The three low-effort Fable agents are never assigned initially, since no score
-reaches them, but they are reachable by escalation from their Opus
-counterparts. All 16 agents are used.
+The three lower-effort Fable agents — `low`, `medium`, and `high` — are never
+assigned initially, since no score reaches them, but they are reachable by
+escalation from their Opus counterparts. All 16 agents are used.
