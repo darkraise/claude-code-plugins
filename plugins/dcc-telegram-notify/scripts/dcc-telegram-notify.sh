@@ -436,6 +436,13 @@ kb_row() {
 
 kb() { local IFS=,; printf '{"inline_keyboard":[%s]}' "$*"; }
 
+# The decision contract with Claude Code. Printing nothing at all means "no
+# decision", which leaves the terminal picker to handle it exactly as today.
+gate_decision() {
+  jq -nc --arg b "$1" \
+    '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:$b}}}'
+}
+
 mint_nonce() {
   local n
   n=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom 2>/dev/null | head -c 8)
@@ -754,6 +761,72 @@ main() {
       nresp=$(send_message "$header" "$status" "$body")
       nmid=$(jq -r '(.result.message_id // empty)' <<<"$nresp" 2>/dev/null)
       [ -n "$nmid" ] && record_last "$nmid"
+      ;;
+
+    PermissionRequest)
+      # Synchronous: Claude Code runs this to completion BEFORE drawing the
+      # terminal picker, so anything slow here is a delay at the keyboard.
+      # Disarmed is therefore the instant path, and it is the default.
+      away_armed || exit 0
+      reply_enabled || exit 0
+
+      local ptool ptarget paction pnonce pmarkup presp pmid pidx pdeadline
+      ptool=$(jq -r '.tool_name // ""' <<<"$payload" 2>/dev/null)
+      if [ -z "$ptool" ]; then
+        paction=$(pending_action "$(jq -r '.transcript_path // ""' <<<"$payload" 2>/dev/null)")
+        ptool=$(jq -r '.tool // ""' <<<"$paction" 2>/dev/null)
+        ptarget=$(jq -r '.target // ""' <<<"$paction" 2>/dev/null)
+      else
+        ptarget=$(jq -r '
+          (.tool_input // {}) |
+          (.command // .url // .file_path // .notebook_path // .pattern // "")
+          | gsub("\\s+"; " ")' <<<"$payload" 2>/dev/null)
+        [ "${#ptarget}" -gt 150 ] && ptarget="${ptarget:0:150}…"
+      fi
+      [ -n "$ptool" ] || exit 0
+
+      pnonce=$(mint_nonce)
+      pmarkup=$(kb "$(kb_row "✅ Allow|${pnonce}:0" "⛔ Deny|${pnonce}:1")" \
+                   "$(kb_row "🏠 I'm back|${pnonce}:back")")
+      SEND_KEYBOARD="$pmarkup"
+      body="▸ $ptool"
+      [ -n "$ptarget" ] && body="▸ $ptool: $ptarget"
+      presp=$(send_message "$header" "🔐 Needs permission" "$body")
+      SEND_KEYBOARD=""
+      pmid=$(jq -r '(.result.message_id // empty)' <<<"$presp" 2>/dev/null)
+      [ -n "$pmid" ] || exit 0
+      record_last "$pmid"
+      pending_put "$pnonce" "$(jq -nc --arg m "$pmid" --arg t "$ptool" \
+        '{kind:"permission",message_id:$m,tool:$t}')"
+
+      pdeadline=$(( $(date +%s) + TELEGRAM_REPLY_WINDOW_AWAY ))
+      pidx=$(await_tap "$pnonce" "$TELEGRAM_CHAT_ID" "$pdeadline")
+      pending_rm "$pnonce"
+      case "$pidx" in
+        0) edit_message "$pmid" "$header
+✅ Allowed from Telegram
+
+$(printf '%s' "$body" | html_escape)"
+           gate_decision allow >&6 ;;
+        1) edit_message "$pmid" "$header
+⛔ Denied from Telegram
+
+$(printf '%s' "$body" | html_escape)"
+           gate_decision deny >&6 ;;
+        back)
+           away_disarm
+           edit_message "$pmid" "$header
+🏠 Away mode off — answer at the keyboard
+
+$(printf '%s' "$body" | html_escape)" ;;
+        # A timeout returns no decision at all, so the terminal picker appears
+        # exactly as it does today.
+        *) edit_message "$pmid" "$header
+⌛ No answer — waiting at the keyboard
+
+$(printf '%s' "$body" | html_escape)" ;;
+      esac
+      exit 0
       ;;
 
     Stop)

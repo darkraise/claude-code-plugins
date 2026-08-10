@@ -24,6 +24,17 @@
         ]
       }
     ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/dcc-telegram-notify.sh\"",
+            "timeout": 3700
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
