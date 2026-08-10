@@ -96,6 +96,32 @@ check "a back command disarms away mode" "$(away_armed && echo yes || echo no)" 
 check "an ordinary message is not a control command" \
   "$(handle_control '{"update_id":3,"message":{"chat":{"id":-100},"text":"hello"}}' && echo yes || echo no)" "no"
 
+# 5b. handle_control's patterns must agree with match_command's in updates.sh
+#     (see the WHY comment above handle_control): a word merely starting with
+#     /away or /back is not a command, in either function. The state is
+#     asserted explicitly before AND after each call -- the return code alone
+#     would pass even if the function armed/disarmed and then returned 1.
+away_disarm
+check "away is disarmed before the /awayfoo probe" "$(away_armed && echo yes || echo no)" "no"
+check "/awayfoo is not a control command" \
+  "$(handle_control '{"update_id":4,"message":{"chat":{"id":-100},"text":"/awayfoo"}}' && echo yes || echo no)" "no"
+check "/awayfoo does not arm away mode" "$(away_armed && echo yes || echo no)" "no"
+
+away_arm 999
+check "away is armed before the /backup probe" "$(away_armed && echo yes || echo no)" "yes"
+check "/backup is not a control command" \
+  "$(handle_control '{"update_id":5,"message":{"chat":{"id":-100},"text":"/backup"}}' && echo yes || echo no)" "no"
+check "/backup does not disarm away mode" "$(away_armed && echo yes || echo no)" "yes"
+away_disarm
+
+check "bare /away still arms away mode" \
+  "$(handle_control '{"update_id":6,"message":{"chat":{"id":-100},"text":"/away"}}' >/dev/null; away_armed && echo yes || echo no)" "yes"
+away_disarm
+check "/away with an argument still arms away mode" \
+  "$(handle_control '{"update_id":7,"message":{"chat":{"id":-100},"text":"/away 2h"}}' >/dev/null; away_armed && echo yes || echo no)" "yes"
+check "bare /back still disarms away mode" \
+  "$(handle_control '{"update_id":8,"message":{"chat":{"id":-100},"text":"/back"}}' >/dev/null; away_armed && echo yes || echo no)" "no"
+
 # 6. Every matcher fails CLOSED when its MATCH_* global is unset (Task 3's
 #    carried finding): a real chat id never equals the empty string, so a
 #    waiter that forgot to set one gets silence, not an error. Prove that

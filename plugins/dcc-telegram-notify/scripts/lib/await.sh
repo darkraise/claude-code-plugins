@@ -8,18 +8,26 @@
 # Arming and disarming from the chat must never be mistaken for an instruction
 # to Claude, so control commands are consumed before the reply matchers run.
 # Returns 0 when the update was a command this consumed.
+#
+# Patterns must match match_command's in updates.sh exactly. The two are only
+# reachable together via drain_control, which claims with match_command before
+# handle_control ever sees the text, so nothing structurally keeps them in sync
+# -- a looser pattern here would just never fire today and reawaken the moment
+# either function's call path changes. match_command was itself tightened from
+# a bare `/away*`/`/back*` glob in Task 3 because it swallowed messages like
+# "/backend deploy failed"; handle_control must not regress to that glob.
 handle_control() {
   local u="$1" text
   text=$(update_text "$u")
   case "$text" in
-    /away*)
+    /away|/away\ *)
       local spec secs
       spec=$(printf '%s' "$text" | awk '{print $2}')
       secs=$(parse_duration "$spec") || secs="$TELEGRAM_AWAY_TTL"
       away_arm "$secs"
       dbg "   away: armed for ${secs}s from Telegram"
       return 0 ;;
-    /back*)
+    /back|/back\ *)
       away_disarm
       dbg "   away: disarmed from Telegram"
       return 0 ;;
