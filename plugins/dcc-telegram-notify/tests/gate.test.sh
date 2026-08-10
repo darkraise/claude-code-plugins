@@ -53,13 +53,19 @@ check "a disarmed gate makes zero curl calls" \
 # stop the branch before it ever reaches Telegram, same as the disarmed path.
 # Nothing above exercises this combination, so a dropped reply_enabled guard
 # would otherwise ship silently.
+#
+# Only the curl-call count is asserted here, not "returns no decision": with
+# the generic stub above, a missing guard still falls through to send_message,
+# gets no message_id back from the stub's generic {"ok":true} response, and
+# exits before ever reaching gate_decision -- so stdout is empty whether or
+# not the guard exists. An assertion that cannot fail is worse than no
+# assertion, since it reads as coverage it isn't providing.
 ARMED_HOME="$(mktemp -d)"
 printf '%s' "$(( $(date +%s) + 3600 ))" > "$ARMED_HOME/away"
 rm -f "$CURL_LOG"
-out="$(printf '%s' "$PR" | PATH="$CURL_STUB_DIR:$PATH" TELEGRAM_NOTIFY_HOME="$ARMED_HOME" \
+printf '%s' "$PR" | PATH="$CURL_STUB_DIR:$PATH" TELEGRAM_NOTIFY_HOME="$ARMED_HOME" \
   TELEGRAM_NOTIFY_ENV="$(mktemp -u)" TELEGRAM_BOT_TOKEN=t TELEGRAM_CHAT_ID=-100 \
-  TELEGRAM_ALLOWED_USERS= bash "$SCRIPT")"
-check "an armed gate with reply disabled returns no decision" "$out" ""
+  TELEGRAM_ALLOWED_USERS= bash "$SCRIPT" >/dev/null
 check "an armed gate with reply disabled makes zero curl calls" \
   "$([ -s "$CURL_LOG" ] && echo "called" || echo "none")" "none"
 
@@ -106,6 +112,36 @@ check "a tapped Allow reaches real stdout as an allow decision" \
   "$(jq -r '.hookSpecificOutput.decision.behavior' <<<"$out" 2>/dev/null)" "allow"
 check "a tapped Allow leaves no pending nonce behind" \
   "$(find "$TAP_HOME/pending" -type f 2>/dev/null | wc -l | tr -d ' ')" "0"
+
+# The security-relevant case: Deny must reach stdout as "deny", not "allow".
+# This has to go through the same case dispatch in main() that Allow does --
+# asserting on gate_decision directly (as the two checks near the bottom of
+# this file do) would never notice button index 1 wired to the wrong behavior.
+rm -f "$TAP_TAPPED_FILE"
+DENY_HOME="$(mktemp -d)"
+printf '%s' "$(( $(date +%s) + 3600 ))" > "$DENY_HOME/away"
+export TAP_INDEX=1
+out="$(printf '%s' "$PR" | PATH="$TAP_STUB_DIR:$PATH" TELEGRAM_NOTIFY_HOME="$DENY_HOME" \
+  TELEGRAM_NOTIFY_ENV="$(mktemp -u)" TELEGRAM_BOT_TOKEN=t TELEGRAM_CHAT_ID=-100 \
+  TELEGRAM_ALLOWED_USERS=111 TELEGRAM_REPLY_POLL=1 bash "$SCRIPT")"
+check "a tapped Deny reaches real stdout as a deny decision" \
+  "$(jq -r '.hookSpecificOutput.decision.behavior' <<<"$out" 2>/dev/null)" "deny"
+check "a tapped Deny leaves no pending nonce behind" \
+  "$(find "$DENY_HOME/pending" -type f 2>/dev/null | wc -l | tr -d ' ')" "0"
+
+# "I'm back" must return no decision at all (the keyboard picker still handles
+# it) and must disarm away mode, so the very next permission request goes
+# straight to the keyboard instead of back out to Telegram.
+rm -f "$TAP_TAPPED_FILE"
+BACK_HOME="$(mktemp -d)"
+printf '%s' "$(( $(date +%s) + 3600 ))" > "$BACK_HOME/away"
+export TAP_INDEX=back
+out="$(printf '%s' "$PR" | PATH="$TAP_STUB_DIR:$PATH" TELEGRAM_NOTIFY_HOME="$BACK_HOME" \
+  TELEGRAM_NOTIFY_ENV="$(mktemp -u)" TELEGRAM_BOT_TOKEN=t TELEGRAM_CHAT_ID=-100 \
+  TELEGRAM_ALLOWED_USERS=111 TELEGRAM_REPLY_POLL=1 bash "$SCRIPT")"
+check "a tapped I'm-back returns no decision" "$out" ""
+check "a tapped I'm-back disarms away mode" \
+  "$([ -f "$BACK_HOME/away" ] && echo armed || echo disarmed)" "disarmed"
 
 rm -f "$TAP_TAPPED_FILE"
 unset TAP_INDEX
