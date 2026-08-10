@@ -232,6 +232,17 @@ away_arm() {
 
 away_disarm() { rm -f "$AWAY_FILE" 2>/dev/null; return 0; }
 
+# A turn woken by a Telegram reply must not disarm away mode the way a locally
+# typed prompt does. The listener drops this marker when it delivers a reply.
+# It expires because a rewake-driven turn may never fire UserPromptSubmit at
+# all, and a lingering marker would eat the next genuine local prompt's disarm.
+: "${TELEGRAM_REMOTE_MARKER_TTL:=120}"
+remote_marker_fresh() {
+  local f="$STATE_DIR/${1}.remote" mt
+  mt=$(file_mtime "$f" 2>/dev/null) || return 1
+  [ $(( $(date +%s) - mt )) -le "$TELEGRAM_REMOTE_MARKER_TTL" ]
+}
+
 # A duration a user typed, as a bare number of seconds or a number with an h/m/s
 # suffix. Everything else is refused with no output: an unvalidated value reaches
 # away_arm's arithmetic, where under `set -u` bash reads a non-numeric token as an
@@ -653,8 +664,11 @@ main() {
   local payload event cwd project session
   payload=$(cat)
 
-  # Never let a notification failure disturb the session.
-  exec 1>/dev/null 2>&1
+  # Never let a notification failure disturb the session. FDs 6 and 7 keep the
+  # real stdout and stderr, because the decision hooks must print JSON on stdout
+  # and the rewake listener must print the reply on stderr -- everything else
+  # stays silenced.
+  exec 6>&1 7>&2 1>/dev/null 2>&1
 
   [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ] || exit 0
 
@@ -693,6 +707,14 @@ main() {
   case "$event" in
     UserPromptSubmit)
       date +%s > "$start_file"
+      # Typing locally means you are back at the keyboard, so away mode ends --
+      # unless this turn was itself driven by a Telegram reply.
+      if remote_marker_fresh "$session"; then
+        rm -f "$STATE_DIR/${session}.remote"
+      else
+        rm -f "$STATE_DIR/${session}.remote"
+        away_disarm
+      fi
       ;;
 
     Notification)
@@ -728,7 +750,10 @@ main() {
         body=$(jq -r '.message // "Claude is waiting for you."' <<<"$payload" 2>/dev/null)
       fi
       event_enabled "$gate" || { dbg "   muted: $gate not in TELEGRAM_EVENTS [$(events_list)]"; exit 0; }
-      send_message "$header" "$status" "$body"
+      local nresp nmid
+      nresp=$(send_message "$header" "$status" "$body")
+      nmid=$(jq -r '(.result.message_id // empty)' <<<"$nresp" 2>/dev/null)
+      [ -n "$nmid" ] && record_last "$nmid"
       ;;
 
     Stop)
@@ -801,7 +826,30 @@ main() {
       fi
       [ -n "$duration" ] && status="$status · $duration"
 
-      send_message "$header" "$status" "$body"
+      local resp mid reply window deadline
+      resp=$(send_message "$header" "$status" "$body")
+      mid=$(jq -r '(.result.message_id // empty)' <<<"$resp" 2>/dev/null)
+      [ -n "$mid" ] && record_last "$mid"
+
+      # Phase two: keep polling for a reply to the message just sent. The turn
+      # has already ended, so the terminal is free the whole time -- typing
+      # locally and replying from Telegram race, and either one ends this.
+      reply_enabled || exit 0
+      [ -n "$mid" ] || exit 0
+      if away_armed; then window="$TELEGRAM_REPLY_WINDOW_AWAY"; else window="$TELEGRAM_REPLY_WINDOW"; fi
+      deadline=$(( $(date +%s) + window ))
+      rm -f "$STATE_DIR/${session}.remote"
+      dbg "   listen: waiting ${window}s for a reply to message $mid"
+      reply=$(await_reply "$start_file" "$mid" "$TELEGRAM_CHAT_ID" "${SEND_TOPIC:-}" "$deadline") || exit 0
+      [ -n "$reply" ] || exit 0
+
+      # A rewake does not fire UserPromptSubmit, so restore the invariant that
+      # the start file marks the beginning of the CURRENT turn ourselves.
+      date +%s > "$start_file"
+      : > "$STATE_DIR/${session}.remote"
+      dbg "   listen: delivering a reply of ${#reply} chars via rewake"
+      printf '%s\n' "$reply" >&7
+      exit 2
       ;;
   esac
   exit 0

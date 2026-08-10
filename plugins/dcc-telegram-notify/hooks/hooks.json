@@ -30,7 +30,8 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/dcc-telegram-notify.sh\"",
-            "async": true
+            "asyncRewake": true,
+            "timeout": 3700
           }
         ]
       }

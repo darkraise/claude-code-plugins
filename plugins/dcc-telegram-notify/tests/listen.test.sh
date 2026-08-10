@@ -206,5 +206,22 @@ check "the drained control command is consumed, not treated as a tap" "$rc" "1"
 away_disarm
 rm -f "$SPOOL_DIR"/*.json
 
+# --- the remote marker -------------------------------------------------------
+# A turn woken by a Telegram reply must not count as "the user came back", or
+# replying from the phone would silently disarm away mode every time.
+sess=marker-test
+touch "$STATE_DIR/${sess}.remote"
+check "a fresh remote marker is honoured" \
+  "$(remote_marker_fresh "$sess" && echo yes || echo no)" "yes"
+# Stale markers must expire: if a rewake never fires UserPromptSubmit the marker
+# would otherwise linger and eat the NEXT genuine local prompt's disarm.
+touch -d "@$(( $(date +%s) - 600 ))" "$STATE_DIR/${sess}.remote" 2>/dev/null \
+  || touch -t "$(date -r $(( $(date +%s) - 600 )) +%Y%m%d%H%M.%S)" "$STATE_DIR/${sess}.remote"
+check "a stale remote marker is ignored" \
+  "$(remote_marker_fresh "$sess" && echo yes || echo no)" "no"
+rm -f "$STATE_DIR/${sess}.remote"
+check "a missing remote marker is not fresh" \
+  "$(remote_marker_fresh "$sess" && echo yes || echo no)" "no"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
