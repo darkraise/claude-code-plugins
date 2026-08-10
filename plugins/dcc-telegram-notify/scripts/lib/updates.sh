@@ -130,10 +130,13 @@ updates_spool_put() {
 }
 
 # A reply sent to a session that has already died must not haunt a later one.
+# Also covers claimed.*.json in UPDATES_DIR itself: updates_claim's mv-then-rm
+# is not atomic as a pair, so a claimer hard-killed between the two leaves that
+# file behind forever if nothing ever revisits it.
 updates_sweep() {
   local f now mt
   now=$(date +%s)
-  for f in "$SPOOL_DIR"/*.json; do
+  for f in "$SPOOL_DIR"/*.json "$UPDATES_DIR"/claimed.*.json; do
     [ -e "$f" ] || continue
     mt=$(file_mtime "$f") || continue
     [ $((now - mt)) -gt "$TELEGRAM_SPOOL_TTL" ] && rm -f "$f" 2>/dev/null
@@ -151,6 +154,10 @@ updates_sweep() {
 # and both successfully mv+cat the same file. $BASHPID is set per subshell, so
 # it is what actually distinguishes them; $RANDOM guards the remaining case of
 # two genuinely separate processes racing in the same PID slot.
+#
+# The ${BASHPID:-$$} fallback form is not dead code: BASHPID only exists from
+# bash 4.0 onward, macOS ships bash 3.2, and a bare $BASHPID reference under
+# `set -u` there would abort every claim outright instead of falling back.
 updates_claim() {
   local pred="$1" f claim
   for f in "$SPOOL_DIR"/*.json; do

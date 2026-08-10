@@ -246,5 +246,40 @@ rm -f "$STATE_DIR/${sess}.remote"
 check "a missing remote marker is not fresh" \
   "$(remote_marker_fresh "$sess" && echo yes || echo no)" "no"
 
+# --- TELEGRAM_REMOTE_MARKER_TTL sanitization ---------------------------------
+# A garbage value must fall back rather than reach remote_marker_fresh's
+# `[ -le ]` unsanitized -- unlike a crash, a bad value there fails SILENTLY
+# stale, which would disarm away mode on every phone reply. Each case sources
+# a fresh copy of the engine in its own subprocess with the value under test
+# already in its environment, so the actual sink is exercised, not just
+# sanitize_seconds itself.
+touch_ago() { # touch_ago <seconds-ago> <path>
+  touch -d "@$(( $(date +%s) - $1 ))" "$2" 2>/dev/null \
+    || touch -t "$(date -r $(( $(date +%s) - $1 )) +%Y%m%d%H%M.%S)" "$2"
+}
+marker_fresh_with() { # marker_fresh_with <TTL value> <age-seconds> <errfile>
+  local home
+  home="$(mktemp -d)"
+  mkdir -p "$home/state"
+  : > "$home/state/x.remote"
+  touch_ago "$2" "$home/state/x.remote"
+  TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$(mktemp -u)" \
+    TELEGRAM_REMOTE_MARKER_TTL="$1" bash -c '
+      # shellcheck disable=SC1090
+      source "'"$SCRIPT"'"
+      remote_marker_fresh x && echo fresh || echo stale
+    ' 2>"$3"
+}
+errfile="$(mktemp -u)"
+check "TELEGRAM_REMOTE_MARKER_TTL=banana falls back to the 120s default (130s-old marker reads stale)" \
+  "$(marker_fresh_with banana 130 "$errfile")" "stale"
+check "TELEGRAM_REMOTE_MARKER_TTL=banana produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+errfile="$(mktemp -u)"
+check "TELEGRAM_REMOTE_MARKER_TTL=banana still honors a 60s-old marker as fresh" \
+  "$(marker_fresh_with banana 60 "$errfile")" "fresh"
+check "TELEGRAM_REMOTE_MARKER_TTL=banana (fresh case) produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

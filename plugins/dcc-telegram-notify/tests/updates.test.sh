@@ -109,6 +109,19 @@ check "a stale spool entry is swept" \
 check "a fresh spool entry survives the sweep" \
   "$([ -f "$SPOOL_DIR/20.json" ] && echo yes || echo no)" "yes"
 
+# A claimer hard-killed between its mv (claim) and rm (release) leaves a
+# claimed.*.json file in UPDATES_DIR itself, outside SPOOL_DIR -- the sweep
+# must reclaim those too, on the same TTL, or they pile up forever.
+: > "$UPDATES_DIR/claimed.30.111.222.json"
+touch -d "@$(( $(date +%s) - 600 ))" "$UPDATES_DIR/claimed.30.111.222.json" 2>/dev/null \
+  || touch -t "$(date -r $(( $(date +%s) - 600 )) +%Y%m%d%H%M.%S)" "$UPDATES_DIR/claimed.30.111.222.json"
+: > "$UPDATES_DIR/claimed.31.111.223.json"
+updates_sweep
+check "a stale abandoned claim file is swept" \
+  "$([ -f "$UPDATES_DIR/claimed.30.111.222.json" ] && echo yes || echo no)" "no"
+check "a fresh abandoned claim file survives the sweep" \
+  "$([ -f "$UPDATES_DIR/claimed.31.111.223.json" ] && echo yes || echo no)" "yes"
+
 # --- with_lock ---------------------------------------------------------------
 LOCKP="$TELEGRAM_NOTIFY_HOME/t.lock"
 lock_probe() { printf 'ran'; }
