@@ -270,6 +270,8 @@ API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
 TELEGRAM_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
 # shellcheck disable=SC1090
 [ -r "$TELEGRAM_LIB_DIR/updates.sh" ] && . "$TELEGRAM_LIB_DIR/updates.sh"
+# shellcheck disable=SC1090
+[ -r "$TELEGRAM_LIB_DIR/await.sh" ] && . "$TELEGRAM_LIB_DIR/await.sh"
 
 # Per-notification routing state, set by main(); defaults keep --test on the shared topic.
 REPO_KEY=""; REPO_NAME=""; SEND_TOPIC=""; SEND_KEYBOARD=""
