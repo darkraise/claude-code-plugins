@@ -151,6 +151,11 @@ out="$(printf '%s' "$PR" | PATH="$TAP_STUB_DIR:$PATH" TELEGRAM_NOTIFY_HOME="$TAP
 check "a timed-out gate returns no decision" "$out" ""
 check "a timed-out gate leaves no pending nonce behind" \
   "$(find "$TAP_HOME/pending" -type f 2>/dev/null | wc -l | tr -d ' ')" "0"
+# A timeout must never disarm away mode -- only "I'm back" may. Neither the
+# timeout nor the "unrecognized index" fallback emits a decision, so an
+# away_disarm call misplaced into this arm is invisible to every check above.
+check "a timed-out gate leaves away mode armed" \
+  "$([ -f "$TAP_HOME/away" ] && echo armed || echo disarmed)" "armed"
 
 # The decision renderer is the contract with Claude Code; a typo here silently
 # turns every remote approval into a no-op.
