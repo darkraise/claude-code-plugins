@@ -59,6 +59,44 @@ The earlier hand-wired setup put hooks directly in each account's `settings.json
    hooks from `settings.json` (else it double-notifies).
 3. Delete the old `~/.claude/telegram-notify.sh` and `~/.claude/telegram.env`.
 
+## Two-way replies
+
+Full spec: `docs/superpowers/plans/2026-08-09-dcc-telegram-notify-reply-back.md`.
+Four decisions that aren't obvious from reading the code alone:
+
+- **Turn-end replies and permission taps use different mechanisms.** A reply to a
+  finished turn is delivered via `asyncRewake`: the `Stop` hook returns after the
+  turn has already ended, so the terminal is never blocked while it polls for a
+  reply. A permission tap, by contrast, runs the `PermissionRequest` hook
+  *synchronously*, before Claude Code draws the terminal picker — it has to,
+  because once the picker is drawn there is no way to withdraw it in favor of a
+  remote decision. The two gates can't share one mechanism: `asyncRewake` can't
+  run early enough to preempt the picker, and a synchronous wait can't be used at
+  turn end without blocking the terminal for the length of the reply window.
+
+- **The spool exists because `getUpdates` is exclusive per bot token.** Telegram
+  hands each `getUpdates` call every update since the last acknowledged offset,
+  and acknowledging consumes them — a second independent poller calling it
+  directly would steal updates meant for the first. Any number of waiters in this
+  process (turn-end listeners, away-mode taps, `/away`/`/back` commands) instead
+  share one poll that files everything it receives into `updates/spool/`, and
+  each waiter claims only what matches its own predicate.
+
+- **Claiming a spooled update is a `rename(2)`, not a read-then-delete.** Two
+  waiters can be scanning the same spool directory concurrently (e.g. a turn-end
+  listener and an away-mode tap waiting at the same time). A rename to a
+  per-claimer destination is atomic, so exactly one of them wins a given file;
+  the loser's `mv` simply fails against an already-vanished source. A
+  check-then-delete pair would let both waiters believe they'd won.
+
+- **An empty `TELEGRAM_ALLOWED_USERS` disables the entire read side.** This is
+  both an upgrade-safety property and the security boundary in one setting.
+  Upgrading from a version before reply-back must not silently start accepting
+  remote commands, so the read side stays off until a user explicitly opts in by
+  naming an id. Once populated, that same list is the only check standing
+  between a message in the chat and a command run on this machine — there is no
+  second factor.
+
 ## Verification
 
 - JSON validity of all manifests/hooks; `bash -n` on the script.

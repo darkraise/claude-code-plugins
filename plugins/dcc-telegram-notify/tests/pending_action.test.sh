@@ -9,6 +9,29 @@
 # returned the most recent *already-resolved* tool instead.
 set -uo pipefail
 
+# Every mktemp call below is host scratch space this file never removes on
+# its own; across repeated runs that leaves thousands of orphaned tmp.*
+# entries in the host's /tmp (both -d directories, and -u paths that a later
+# redirect such as `2>"$errfile"` turns into a real file). Wrapping mktemp
+# records each path it hands out to a FILE, not a variable: most calls here
+# happen inside a $(...) command substitution, which forks its own subshell,
+# and a variable set there is lost the moment that subshell exits -- a file
+# survives it. The EXIT trap then sweeps every path this file made that
+# actually exists on disk, not just the first.
+_TEST_TMP_LIST="${TMPDIR:-/tmp}/dcc-telegram-test-tmp.$$"
+mktemp() {
+  local d
+  d="$(command mktemp "$@")"
+  printf '%s\n' "$d" >> "$_TEST_TMP_LIST"
+  printf '%s' "$d"
+}
+trap '
+  if [ -f "$_TEST_TMP_LIST" ]; then
+    while IFS= read -r _d; do [ -e "$_d" ] && rm -rf "$_d"; done < "$_TEST_TMP_LIST"
+    rm -f "$_TEST_TMP_LIST"
+  fi
+' EXIT
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="$HERE/../scripts/dcc-telegram-notify.sh"
 FIXTURES="$HERE/fixtures"
@@ -57,6 +80,24 @@ check "unresolved Bash reports its command target" \
 out=$(pending_action "$FIXTURES/pending_with_string_user_content.jsonl")
 check "string-content user message does not break iteration (tool)" \
   "$(field "$out" '.tool // "EMPTY"')" "AskUserQuestion"
+
+# 5. TELEGRAM_PENDING_TRIES sanitization (Task 5 additional work). tries feeds
+# `for ((i = 0; i < tries; i++))`, a fatal arithmetic context under `set -u`:
+# a bad value must fall back rather than kill the hook. Exercised against a
+# fixture with nothing pending, so the loop runs to completion either way.
+errfile=$(mktemp -u)
+out=$(TELEGRAM_PENDING_TRIES=banana pending_action "$FIXTURES/stale_resolved_bash.jsonl" 2>"$errfile")
+check "TELEGRAM_PENDING_TRIES=banana still yields no pending action (falls back, no crash)" \
+  "$(field "$out" '.tool // "EMPTY"')" "EMPTY"
+check "TELEGRAM_PENDING_TRIES=banana produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+
+errfile=$(mktemp -u)
+out=$(TELEGRAM_PENDING_TRIES=003 pending_action "$FIXTURES/stale_resolved_bash.jsonl" 2>"$errfile")
+check "TELEGRAM_PENDING_TRIES=003 still yields no pending action (normalizes, no crash)" \
+  "$(field "$out" '.tool // "EMPTY"')" "EMPTY"
+check "TELEGRAM_PENDING_TRIES=003 produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

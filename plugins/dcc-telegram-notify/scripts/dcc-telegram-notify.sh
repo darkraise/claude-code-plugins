@@ -81,6 +81,36 @@ TELEGRAM_TOPIC_MODE=shared
 # The default is everything that leaves the session blocked on you.
 TELEGRAM_EVENTS=permission,input,stop-question
 
+# --- Replying from Telegram --------------------------------------------------
+# Reply to a notification and the session picks your message up and keeps
+# working. THIS IS OFF until you list at least one Telegram user id below: a
+# reply is an instruction Claude executes, and while away mode is armed a tap
+# approves a tool call, so anyone able to post in the chat would otherwise have
+# command execution on this machine.
+# Find your id with: /dcc-telegram-notify whoami
+TELEGRAM_ALLOWED_USERS=
+
+# Master switch for the read side. off = notifications only, as before.
+TELEGRAM_REPLY=on
+
+# How long a finished turn keeps listening for a reply, in seconds. Nothing is
+# blocked during this window -- the turn has already ended.
+# Raising this past 3700 has no effect -- see TELEGRAM_REPLY_WINDOW_AWAY below.
+TELEGRAM_REPLY_WINDOW=600
+
+# The same window while away mode is armed, which also governs how long a
+# permission prompt waits for your tap before falling back to the terminal.
+# Practical ceiling 3700s: hooks.json's Stop/PermissionRequest timeout kills the
+# hook before a higher value would fire; it just fails safe, same as a timeout.
+TELEGRAM_REPLY_WINDOW_AWAY=3600
+
+# Seconds per getUpdates long-poll, and how long an unclaimed update is kept.
+TELEGRAM_REPLY_POLL=3
+TELEGRAM_SPOOL_TTL=300
+
+# Default duration for /dcc-telegram-notify away when you don't name one.
+TELEGRAM_AWAY_TTL=7200
+
 # --- Optional LLM turn summaries (OFF by default) ----------------------------
 # Leave TELEGRAM_LLM_URL empty to disable. Set it to an OpenAI-compatible base
 # URL to summarize turn-end messages into 1-2 sentences; if the gateway is
@@ -112,11 +142,25 @@ seed_config
 # won't exist on every machine, and an empty URL avoids a per-turn timeout.
 : "${TELEGRAM_LLM_URL:=}" "${TELEGRAM_LLM_MODEL:=auto/best-fast}"
 : "${TELEGRAM_LLM_API_KEY:=}" "${TELEGRAM_LLM_TIMEOUT:=12}" "${TELEGRAM_LLM_MAX_TOKENS:=512}"
+
+# sanitize_seconds lives in lib/common.sh, shared with the read side (which
+# sources the same file itself), so a bad config value is validated the same
+# way wherever it lands. Resolved now, ahead of the first config value that
+# needs it.
+TELEGRAM_COMMON_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
+# shellcheck disable=SC1090
+[ -r "$TELEGRAM_COMMON_LIB" ] && . "$TELEGRAM_COMMON_LIB"
+
 : "${TELEGRAM_MAX_CHARS:=3500}"
+TELEGRAM_MAX_CHARS=$(sanitize_seconds "$TELEGRAM_MAX_CHARS" 3500)
 # Topic routing. "shared": every message goes to TELEGRAM_TOPIC_ID. "per-project":
 # each git repo gets its own auto-created topic; non-repos use TELEGRAM_TOPIC_ID.
 : "${TELEGRAM_TOPIC_MODE:=shared}"
 : "${TELEGRAM_TOPIC_MAP:=$TELEGRAM_NOTIFY_HOME/topics.json}"
+
+: "${TELEGRAM_AWAY_TTL:=7200}"
+TELEGRAM_AWAY_TTL=$(sanitize_seconds "$TELEGRAM_AWAY_TTL" 7200)
+TELEGRAM_AWAY_MAX=$(sanitize_seconds "${TELEGRAM_AWAY_MAX:-604800}" 604800)
 
 # Which notifications are allowed to send. Comma- or space-separated tokens:
 #   permission    a tool call is waiting for approval
@@ -188,10 +232,91 @@ resolve_account_label() {
 }
 TELEGRAM_ACCOUNT_LABEL_RESOLVED="$(resolve_account_label)"
 
+# --- Away mode ---------------------------------------------------------------
+# The arming that turns the blocking gates on. Machine-wide by design: you walk
+# away from the machine, not from one project, so one flag covers every project
+# and every Claude account sharing this home.
+AWAY_FILE="$TELEGRAM_NOTIFY_HOME/away"
+
+away_armed() {
+  local exp
+  exp=$(cat "$AWAY_FILE" 2>/dev/null)
+  [[ "$exp" =~ ^[0-9]+$ ]] || { rm -f "$AWAY_FILE" 2>/dev/null; return 1; }
+  # An expired flag deletes itself here rather than waiting for a disarm, so a
+  # forgotten arming cannot gate sessions indefinitely.
+  [ "$(date +%s)" -lt "$exp" ] || { rm -f "$AWAY_FILE" 2>/dev/null; return 1; }
+}
+
+away_arm() {
+  local secs="${1:-$TELEGRAM_AWAY_TTL}"
+  # Reachable from a Telegram message, so refuse outright rather than arm a
+  # duration nobody asked for -- the caller owns the fallback decision.
+  [[ "$secs" =~ ^[0-9]+$ ]] || return 1
+  [ "${#secs}" -le 9 ] || return 1
+  secs=$(( 10#$secs ))
+  [ "$secs" -gt 0 ] || return 1
+  mkdir -p "$TELEGRAM_NOTIFY_HOME" 2>/dev/null || return 0
+  printf '%s' "$(( $(date +%s) + secs ))" > "$AWAY_FILE" 2>/dev/null
+  return 0
+}
+
+away_disarm() { rm -f "$AWAY_FILE" 2>/dev/null; return 0; }
+
+# A turn woken by a Telegram reply must not disarm away mode the way a locally
+# typed prompt does. The listener drops this marker when it delivers a reply.
+# It expires because a rewake-driven turn may never fire UserPromptSubmit at
+# all, and a lingering marker would eat the next genuine local prompt's disarm.
+: "${TELEGRAM_REMOTE_MARKER_TTL:=120}"
+TELEGRAM_REMOTE_MARKER_TTL=$(sanitize_seconds "$TELEGRAM_REMOTE_MARKER_TTL" 120)
+remote_marker_fresh() {
+  local f="$STATE_DIR/${1}.remote" mt
+  mt=$(file_mtime "$f" 2>/dev/null) || return 1
+  [ $(( $(date +%s) - mt )) -le "$TELEGRAM_REMOTE_MARKER_TTL" ]
+}
+
+# A duration a user typed, as a bare number of seconds or a number with an h/m/s
+# suffix. Everything else is refused with no output: an unvalidated value reaches
+# away_arm's arithmetic, where under `set -u` bash reads a non-numeric token as an
+# unset variable name and kills the process outright.
+parse_duration() {
+  local d="${1:-}" n unit secs
+  [ -n "$d" ] || return 1
+  case "$d" in
+    *h) n="${d%h}"; unit=h ;;
+    *m) n="${d%m}"; unit=m ;;
+    *s) n="${d%s}"; unit=s ;;
+    *)  n="$d";     unit=s ;;
+  esac
+  [[ "$n" =~ ^[0-9]+$ ]] || return 1
+  # Bound the digit count before comparing: a value wider than the arithmetic can
+  # hold makes `[` itself fail rather than returning a clean refusal.
+  [ "${#n}" -le 9 ] || return 1
+  # Bash arithmetic reads a leading-zero literal as octal: "017" would become 15
+  # and "008" would abort the shell with "value too great for base". 10# forces
+  # base 10 and normalizes the value for every use below.
+  n=$(( 10#$n ))
+  [ "$n" -gt 0 ] || return 1
+  case "$unit" in
+    h) secs=$(( n * 3600 )) ;;
+    m) secs=$(( n * 60 )) ;;
+    *) secs="$n" ;;
+  esac
+  [ "$secs" -le "$TELEGRAM_AWAY_MAX" ] || return 1
+  printf '%s' "$secs"
+}
+
 API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
 
+# The read side lives in its own library so it can be tested without a session
+# in play. Sourced after API/config so it inherits both.
+TELEGRAM_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+# shellcheck disable=SC1090
+[ -r "$TELEGRAM_LIB_DIR/updates.sh" ] && . "$TELEGRAM_LIB_DIR/updates.sh"
+# shellcheck disable=SC1090
+[ -r "$TELEGRAM_LIB_DIR/await.sh" ] && . "$TELEGRAM_LIB_DIR/await.sh"
+
 # Per-notification routing state, set by main(); defaults keep --test on the shared topic.
-REPO_KEY=""; REPO_NAME=""; SEND_TOPIC=""
+REPO_KEY=""; REPO_NAME=""; SEND_TOPIC=""; SEND_KEYBOARD=""
 
 # Opt-in diagnostics: set TELEGRAM_DEBUG=1 to append a trace of each hook firing.
 TELEGRAM_DEBUG_LOG="${TELEGRAM_DEBUG_LOG:-$TELEGRAM_NOTIFY_HOME/debug.log}"
@@ -289,8 +414,16 @@ map_remove() {
   ) 9>>"${TELEGRAM_TOPIC_MAP}.lock"
 }
 
+# The topic a message is SENT to and the topic a reply is MATCHED against must
+# be the SAME value, or bare replies (no long-press Reply, just typed into the
+# topic) vanish silently: send() would post to the fallback topic while a call
+# site that forgot this accessor left MATCH_TOPIC empty, so match_bare_topic
+# rejects every message actually sitting in that topic. One accessor for every
+# caller keeps the two from ever drifting apart again.
+effective_topic() { printf '%s' "${SEND_TOPIC:-$TELEGRAM_TOPIC_ID}"; }
+
 send() {
-  local text="$1" topic="${SEND_TOPIC:-$TELEGRAM_TOPIC_ID}"
+  local text="$1" topic; topic="$(effective_topic)"
   local -a args=(
     --silent --show-error --max-time 15
     --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}"
@@ -300,6 +433,7 @@ send() {
   )
   # A "topic" in a forum-enabled group is addressed by its thread id.
   [ -n "$topic" ] && args+=(--data-urlencode "message_thread_id=${topic}")
+  [ -n "$SEND_KEYBOARD" ] && args+=(--data-urlencode "reply_markup=${SEND_KEYBOARD}")
   # Feed the (possibly multi-byte) text via stdin, not an argv value: Git Bash
   # re-encodes command-line arguments to the legacy Windows code page when it
   # spawns native curl.exe, mangling UTF-8 (emoji become "?", "·" becomes a lone
@@ -323,6 +457,78 @@ send_message() {
   fi
   dbg "   send: ok=$(jq -r '.ok // "?"' <<<"$resp" 2>/dev/null) desc=$(jq -r '.description // ""' <<<"$resp" 2>/dev/null) topic=${SEND_TOPIC:-shared}"
   printf '%s' "$resp"
+}
+
+# --- Inline keyboards --------------------------------------------------------
+# Telegram caps callback_data at 64 bytes, so a button carries only a nonce and
+# a button index; the chat, topic, message id, session and option labels live in
+# pending/<nonce>.json beside the rest of the state.
+
+kb_row() {
+  local a parts=()
+  for a in "$@"; do
+    parts+=("$(jq -nc --arg t "${a%%|*}" --arg d "${a#*|}" '{text:$t,callback_data:$d}')")
+  done
+  local IFS=,
+  printf '[%s]' "${parts[*]}"
+}
+
+kb() { local IFS=,; printf '{"inline_keyboard":[%s]}' "$*"; }
+
+# The decision contract with Claude Code. Printing nothing at all means "no
+# decision", which leaves the terminal picker to handle it exactly as today.
+gate_decision() {
+  jq -nc --arg b "$1" \
+    '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:$b}}}'
+}
+
+mint_nonce() {
+  local n
+  n=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom 2>/dev/null | head -c 8)
+  [ ${#n} -eq 8 ] || n=$(printf '%08x' $(( (RANDOM << 15 | RANDOM) & 0xffffffff )))
+  printf '%s' "$n"
+}
+
+PENDING_DIR="$TELEGRAM_NOTIFY_HOME/pending"
+
+pending_put() {
+  mkdir -p "$PENDING_DIR" 2>/dev/null || return 0
+  printf '%s' "$2" > "$PENDING_DIR/$1.json" 2>/dev/null
+  return 0
+}
+pending_get() { cat "$PENDING_DIR/$1.json" 2>/dev/null; return 0; }
+pending_rm()  { rm -f "$PENDING_DIR/$1.json" 2>/dev/null; return 0; }
+
+# Written at send time so a bare message typed into a topic can be routed to the
+# newest notification there without the user long-pressing to Reply.
+record_last() {
+  local p
+  p=$(last_marker_path "$TELEGRAM_CHAT_ID" "$(effective_topic)")
+  mkdir -p "$(dirname "$p")" 2>/dev/null || return 0
+  printf '%s' "$1" > "$p" 2>/dev/null
+  return 0
+}
+
+# Clears the spinner on the phone. Telegram shows the text as a brief toast.
+answer_callback() {
+  curl -sS --max-time 10 \
+    --data-urlencode "callback_query_id=$1" \
+    --data-urlencode "text=${2:-}" \
+    "${API}/answerCallbackQuery" >/dev/null 2>&1
+  return 0
+}
+
+# Rewrites a resolved prompt so the message records its own outcome and its
+# buttons cannot be tapped a second time.
+edit_message() {
+  local mid="$1" html="$2"
+  printf '%s' "$html" | curl -sS --max-time 10 \
+    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+    --data-urlencode "message_id=${mid}" \
+    --data-urlencode "text@-" \
+    --data-urlencode "parse_mode=HTML" \
+    "${API}/editMessageText" >/dev/null 2>&1
+  return 0
 }
 
 # Last assistant message that actually contains text: the final one is often a
@@ -434,7 +640,8 @@ llm_classify() {
 # when several tools are pending at once; `sidechain` marks a subagent-issued
 # call; AskUserQuestion fills question/options instead of a run target.
 pending_action() {
-  local transcript="$1" i out tries="${TELEGRAM_PENDING_TRIES:-17}"
+  local transcript="$1" i out tries
+  tries=$(sanitize_seconds "${TELEGRAM_PENDING_TRIES:-17}" 17)
   [ -r "$transcript" ] || return 0
   for ((i = 0; i < tries; i++)); do
     out=$(tail -n 400 "$transcript" 2>/dev/null | jq -Rsr '
@@ -503,8 +710,11 @@ main() {
   local payload event cwd project session
   payload=$(cat)
 
-  # Never let a notification failure disturb the session.
-  exec 1>/dev/null 2>&1
+  # Never let a notification failure disturb the session. FDs 6 and 7 keep the
+  # real stdout and stderr, because the decision hooks must print JSON on stdout
+  # and the rewake listener must print the reply on stderr -- everything else
+  # stays silenced.
+  exec 6>&1 7>&2 1>/dev/null 2>&1
 
   [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ] || exit 0
 
@@ -543,6 +753,14 @@ main() {
   case "$event" in
     UserPromptSubmit)
       date +%s > "$start_file"
+      # Typing locally means you are back at the keyboard, so away mode ends --
+      # unless this turn was itself driven by a Telegram reply.
+      if remote_marker_fresh "$session"; then
+        rm -f "$STATE_DIR/${session}.remote"
+      else
+        rm -f "$STATE_DIR/${session}.remote"
+        away_disarm
+      fi
       ;;
 
     Notification)
@@ -578,7 +796,76 @@ main() {
         body=$(jq -r '.message // "Claude is waiting for you."' <<<"$payload" 2>/dev/null)
       fi
       event_enabled "$gate" || { dbg "   muted: $gate not in TELEGRAM_EVENTS [$(events_list)]"; exit 0; }
-      send_message "$header" "$status" "$body"
+      local nresp nmid
+      nresp=$(send_message "$header" "$status" "$body")
+      nmid=$(jq -r '(.result.message_id // empty)' <<<"$nresp" 2>/dev/null)
+      [ -n "$nmid" ] && record_last "$nmid"
+      ;;
+
+    PermissionRequest)
+      # Synchronous: Claude Code runs this to completion BEFORE drawing the
+      # terminal picker, so anything slow here is a delay at the keyboard.
+      # Disarmed is therefore the instant path, and it is the default.
+      away_armed || exit 0
+      reply_enabled || exit 0
+
+      local ptool ptarget paction pnonce pmarkup presp pmid pidx pdeadline
+      ptool=$(jq -r '.tool_name // ""' <<<"$payload" 2>/dev/null)
+      if [ -z "$ptool" ]; then
+        paction=$(pending_action "$(jq -r '.transcript_path // ""' <<<"$payload" 2>/dev/null)")
+        ptool=$(jq -r '.tool // ""' <<<"$paction" 2>/dev/null)
+        ptarget=$(jq -r '.target // ""' <<<"$paction" 2>/dev/null)
+      else
+        ptarget=$(jq -r '
+          (.tool_input // {}) |
+          (.command // .url // .file_path // .notebook_path // .pattern // "")
+          | gsub("\\s+"; " ")' <<<"$payload" 2>/dev/null)
+        [ "${#ptarget}" -gt 150 ] && ptarget="${ptarget:0:150}…"
+      fi
+      [ -n "$ptool" ] || exit 0
+
+      pnonce=$(mint_nonce)
+      pmarkup=$(kb "$(kb_row "✅ Allow|${pnonce}:0" "⛔ Deny|${pnonce}:1")" \
+                   "$(kb_row "🏠 I'm back|${pnonce}:back")")
+      SEND_KEYBOARD="$pmarkup"
+      body="▸ $ptool"
+      [ -n "$ptarget" ] && body="▸ $ptool: $ptarget"
+      presp=$(send_message "$header" "🔐 Needs permission" "$body")
+      SEND_KEYBOARD=""
+      pmid=$(jq -r '(.result.message_id // empty)' <<<"$presp" 2>/dev/null)
+      [ -n "$pmid" ] || exit 0
+      record_last "$pmid"
+      pending_put "$pnonce" "$(jq -nc --arg m "$pmid" --arg t "$ptool" \
+        '{kind:"permission",message_id:$m,tool:$t}')"
+
+      pdeadline=$(( $(date +%s) + TELEGRAM_REPLY_WINDOW_AWAY ))
+      pidx=$(await_tap "$pnonce" "$TELEGRAM_CHAT_ID" "$pdeadline")
+      pending_rm "$pnonce"
+      case "$pidx" in
+        0) edit_message "$pmid" "$header
+✅ Allowed from Telegram
+
+$(printf '%s' "$body" | html_escape)"
+           gate_decision allow >&6 ;;
+        1) edit_message "$pmid" "$header
+⛔ Denied from Telegram
+
+$(printf '%s' "$body" | html_escape)"
+           gate_decision deny >&6 ;;
+        back)
+           away_disarm
+           edit_message "$pmid" "$header
+🏠 Away mode off — answer at the keyboard
+
+$(printf '%s' "$body" | html_escape)" ;;
+        # A timeout returns no decision at all, so the terminal picker appears
+        # exactly as it does today.
+        *) edit_message "$pmid" "$header
+⌛ No answer — waiting at the keyboard
+
+$(printf '%s' "$body" | html_escape)" ;;
+      esac
+      exit 0
       ;;
 
     Stop)
@@ -651,7 +938,30 @@ main() {
       fi
       [ -n "$duration" ] && status="$status · $duration"
 
-      send_message "$header" "$status" "$body"
+      local resp mid reply window deadline
+      resp=$(send_message "$header" "$status" "$body")
+      mid=$(jq -r '(.result.message_id // empty)' <<<"$resp" 2>/dev/null)
+      [ -n "$mid" ] && record_last "$mid"
+
+      # Phase two: keep polling for a reply to the message just sent. The turn
+      # has already ended, so the terminal is free the whole time -- typing
+      # locally and replying from Telegram race, and either one ends this.
+      reply_enabled || exit 0
+      [ -n "$mid" ] || exit 0
+      if away_armed; then window="$TELEGRAM_REPLY_WINDOW_AWAY"; else window="$TELEGRAM_REPLY_WINDOW"; fi
+      deadline=$(( $(date +%s) + window ))
+      rm -f "$STATE_DIR/${session}.remote"
+      dbg "   listen: waiting ${window}s for a reply to message $mid"
+      reply=$(await_reply "$start_file" "$mid" "$TELEGRAM_CHAT_ID" "$(effective_topic)" "$deadline") || exit 0
+      [ -n "$reply" ] || exit 0
+
+      # A rewake does not fire UserPromptSubmit, so restore the invariant that
+      # the start file marks the beginning of the CURRENT turn ourselves.
+      date +%s > "$start_file"
+      : > "$STATE_DIR/${session}.remote"
+      dbg "   listen: delivering a reply of ${#reply} chars via rewake"
+      printf '%s\n' "$reply" >&7
+      exit 2
       ;;
   esac
   exit 0
@@ -730,7 +1040,49 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
       { [ -n "$TELEGRAM_EVENTS_UNKNOWN" ] && \
         printf 'ignored (not valid tokens): %s\n' "$TELEGRAM_EVENTS_UNKNOWN"; } || true
       ;;
+    --away)
+      secs=""
+      if [ -n "${2:-}" ]; then
+        secs=$(parse_duration "$2") || {
+          printf 'Not a duration: %s. Using the default. Try 90, 45s, 30m or 2h.\n' "$2"
+          secs=""
+        }
+      fi
+      [ -n "$secs" ] || secs="$TELEGRAM_AWAY_TTL"
+      if away_arm "$secs"; then
+        printf 'Away mode armed for %s. Permission prompts and questions will wait for a Telegram tap.\n' \
+          "$(format_duration "$secs")"
+      else
+        printf 'Could not arm away mode: %s is not a usable duration.\n' "$secs"
+      fi
+      ;;
+    --back)
+      away_disarm
+      echo "Away mode disarmed. Prompts go straight to your terminal again."
+      ;;
+    --reply-status)
+      printf 'read side:      %s\n' "$(reply_enabled && echo enabled || echo disabled)"
+      printf 'allowlist:      %s\n' \
+        "$([ -n "$TELEGRAM_ALLOWED_USERS" ] && printf '%s id(s)' "$(printf '%s' "$TELEGRAM_ALLOWED_USERS" | tr ',' ' ' | wc -w | tr -d ' ')" || echo 'EMPTY — reply-back is off')"
+      printf 'away mode:      %s\n' "$(away_armed && echo armed || echo disarmed)"
+      printf 'spool depth:    %s\n' "$(ls "$SPOOL_DIR" 2>/dev/null | wc -l | tr -d ' ')"
+      printf 'update offset:  %s\n' "$(updates_offset_get)"
+      echo
+      echo "Note: getUpdates is exclusive per bot token. Exactly one machine may"
+      echo "have TELEGRAM_REPLY=on for a given bot; a second machine needs its own."
+      ;;
+    --whoami)
+      [ -n "$TELEGRAM_BOT_TOKEN" ] || die "Set TELEGRAM_BOT_TOKEN first"
+      echo "Send any message to your bot now, then press Enter."
+      read -r _ || true
+      curl -sS --max-time 15 "${API}/getUpdates" | jq -r '
+        [ .result[] | (.message // .callback_query // empty) | .from
+          | select(. != null) | "  \(.id)   \(.first_name // "")\(if .username then " (@" + .username + ")" else "" end)" ]
+        | unique | if length == 0 then "  (nothing seen — post a message to the bot and retry)" else .[] end'
+      echo
+      echo "Put the id in TELEGRAM_ALLOWED_USERS in your telegram.env."
+      ;;
     "") main ;;
-    *) die "unknown option: $1 (use --discover, --test, --edit, --events, or pipe hook JSON on stdin)" ;;
+    *) die "unknown option: $1 (use --discover, --test, --edit, --events, --away, --back, --reply-status, --whoami, or pipe hook JSON on stdin)" ;;
   esac
 fi

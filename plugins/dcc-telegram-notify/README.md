@@ -138,6 +138,62 @@ timer that gives turn-end messages their duration.
 > `topics.json`, if present) from `~/.telegram-notify/` to
 > `~/.dcc-telegram-notify/` yourself.
 
+## Replying from Telegram
+
+Reply to a turn-end notification and the session picks your message up and keeps
+working — no need to be at the keyboard. This is off until you list your Telegram
+user id: run `/dcc-telegram-notify whoami`, send your bot a message when prompted,
+and put the id it prints into `TELEGRAM_ALLOWED_USERS`. Nothing on the read side
+does anything until that list is non-empty, and the allowlist is the only thing
+standing between "anyone who can post in this chat" and "commands run on this
+machine" — a reply is an instruction Claude executes.
+
+> **Read this before you rely on it for unattended work.** A reply arrives through
+> the hook channel, and Claude Code marks that channel as *not* user input.
+> Continuing, reading, analysing, and answering all work normally, but an
+> irreversible action — an edit, a commit, a deploy — may draw a request to
+> confirm at the keyboard instead of just running. This does **not** affect
+> permission taps below: those return a decision (allow/deny) that the CLI
+> honours directly, not text Claude has to decide whether to trust. If you were
+> hoping to text "commit and push" from a train and have it happen unattended,
+> it may not — plan on confirming irreversible steps yourself.
+>
+> `AskUserQuestion` cannot be answered from Telegram. Its notification looks like
+> any other prompt, but a reply to it is not delivered as a selection — the
+> question stays open until you answer at the keyboard.
+
+**At turn end:** when a turn finishes, the notification keeps listening for a
+reply for `TELEGRAM_REPLY_WINDOW` seconds. Nothing is blocked during that
+window — the turn has already ended, and your terminal is free the whole time.
+If you type locally and reply from Telegram both land, whichever arrives first
+wins the race; the other is ignored.
+
+**Away mode** gates permission prompts — a tool call waiting for your approval —
+behind a Telegram tap instead of sending them straight to the terminal picker.
+It does not gate `AskUserQuestion`; see the caveat above. Arm it with
+`/dcc-telegram-notify away [duration]` (e.g. `away 2h`; defaults to
+`TELEGRAM_AWAY_TTL` with no argument) and disarm it with `/dcc-telegram-notify
+back`, or by typing anything locally, which disarms it automatically. It is
+**machine-wide** — one flag covers every project and every Claude account
+sharing this config home — and it expires on its own after the armed duration,
+so a forgotten arming cannot gate sessions indefinitely.
+
+A few gotchas:
+
+- **Bot privacy mode hides bare group messages.** By default a Telegram bot in a
+  group only sees messages that start with `/` or are sent as an explicit Reply
+  to one of its messages. To have plain replies picked up, either disable
+  privacy mode for your bot in @BotFather or always use Telegram's Reply
+  function on the notification you're answering.
+- **`getUpdates` is exclusive per bot token.** Only one machine may have
+  `TELEGRAM_REPLY=on` for a given bot at a time; a second machine polling the
+  same token steals updates from the first. Give each machine its own bot if
+  you want the read side enabled on more than one.
+- **A reply is an instruction Claude executes.** There is no second factor
+  beyond the chat itself — `TELEGRAM_ALLOWED_USERS` is the only boundary
+  between a message in this chat and a command run on this machine, so keep
+  that list tight and keep the bot token private.
+
 ## Optional LLM turn summaries
 
 Off by default. Set `TELEGRAM_LLM_URL` to an OpenAI-compatible base URL (and
@@ -154,6 +210,13 @@ message's own opening lines — nothing is lost, just less polished.
 | `TELEGRAM_TOPIC_ID` | *(empty)* | Forum topic id; empty posts to the main thread. |
 | `TELEGRAM_TOPIC_MODE` | `shared` | `shared` or `per-project`. |
 | `TELEGRAM_EVENTS` | `permission,input,stop-question` | Which notifications send; see above. |
+| `TELEGRAM_ALLOWED_USERS` | *(empty)* | Comma-separated Telegram user ids allowed to reply/tap. Empty = read side off. |
+| `TELEGRAM_REPLY` | `on` | Master switch for the read side; `off` = notifications only. |
+| `TELEGRAM_REPLY_WINDOW` | `600` | Seconds a finished turn keeps listening for a reply. Same practical ceiling **3700** as `TELEGRAM_REPLY_WINDOW_AWAY` below — see that row. |
+| `TELEGRAM_REPLY_WINDOW_AWAY` | `3600` | Same, while away mode is armed; also how long a permission prompt waits for a tap. Practical ceiling **3700** — the `Stop`/`PermissionRequest` hooks in `hooks.json` have a static 3700s timeout, so a higher value lets Claude Code kill the hook first. That fails safe (no reply, same as a timeout), but it never actually waits longer than 3700s. |
+| `TELEGRAM_REPLY_POLL` | `3` | Seconds per `getUpdates` long-poll. |
+| `TELEGRAM_SPOOL_TTL` | `300` | How long an unclaimed spooled update is kept. |
+| `TELEGRAM_AWAY_TTL` | `7200` | Default duration for `/dcc-telegram-notify away` with no argument. |
 | `TELEGRAM_LLM_URL` | *(empty = off)* | OpenAI-compatible gateway base URL for summaries. |
 | `TELEGRAM_LLM_MODEL` | `auto/best-fast` | Model used for summaries. |
 | `TELEGRAM_LLM_API_KEY` | *(empty)* | Sent as `Authorization: Bearer` only if set. |
@@ -185,8 +248,10 @@ message's own opening lines — nothing is lost, just less polished.
   existing topic, pin its id — e.g. `{ "github.com/you/repo": 42 }` in
   `~/.dcc-telegram-notify/topics.json`, getting the id from `--discover` — or share that file
   (or point `TELEGRAM_TOPIC_MAP` at a synced path) across machines.
-- **Same bot on many machines is fine** — sending has no polling conflict. Only
-  `--discover` (getUpdates) can conflict with another long-poller.
+- **Same bot on many machines is fine for sending only** — notifications have no
+  polling conflict. The read side does: `--discover` and reply-back both call
+  `getUpdates`, which is exclusive per bot token, so at most one machine may have
+  `TELEGRAM_REPLY=on` for a given bot at a time.
 - **`--edit` on a headless box.** With no GUI and no `$VISUAL`/`$EDITOR`, `--edit`
   will not launch a blocking terminal editor (nano/vi) when there's no interactive
   terminal — it prints the config path instead. Set `$EDITOR`/`$VISUAL`, or just edit

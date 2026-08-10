@@ -4,6 +4,29 @@
 # in for the Bot API, and counts sends.
 set -uo pipefail
 
+# Every mktemp call below is host scratch space this file never removes on
+# its own; across repeated runs that leaves thousands of orphaned tmp.*
+# entries in the host's /tmp (both -d directories, and -u paths that a later
+# redirect such as `2>"$errfile"` turns into a real file). Wrapping mktemp
+# records each path it hands out to a FILE, not a variable: most calls here
+# happen inside a $(...) command substitution, which forks its own subshell,
+# and a variable set there is lost the moment that subshell exits -- a file
+# survives it. The EXIT trap then sweeps every path this file made that
+# actually exists on disk, not just the first.
+_TEST_TMP_LIST="${TMPDIR:-/tmp}/dcc-telegram-test-tmp.$$"
+mktemp() {
+  local d
+  d="$(command mktemp "$@")"
+  printf '%s\n' "$d" >> "$_TEST_TMP_LIST"
+  printf '%s' "$d"
+}
+trap '
+  if [ -f "$_TEST_TMP_LIST" ]; then
+    while IFS= read -r _d; do [ -e "$_d" ] && rm -rf "$_d"; done < "$_TEST_TMP_LIST"
+    rm -f "$_TEST_TMP_LIST"
+  fi
+' EXIT
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="$HERE/../scripts/dcc-telegram-notify.sh"
 FIXTURES="$HERE/fixtures"
@@ -131,6 +154,33 @@ check "stop-reply sends when the LLM classifies a reply" \
   "$(sends_llm reply stop-reply "$STOP_W")"    "1"
 check "stop-question mutes when the LLM classifies a reply" \
   "$(sends_llm reply stop-question "$STOP_W")" "0"
+
+# --- TELEGRAM_MAX_CHARS sanitization (Task 5 additional work) ---------------
+# clamp's `(( ${#text} > limit ))` runs inside a command substitution, so an
+# unsanitized bad value does not kill the hook -- it kills only that subshell,
+# and the parent silently sends an EMPTY message body. Each case sources a
+# fresh copy of the engine in its own subprocess with the value under test
+# already in its environment, then calls clamp directly the way send_message
+# does, so the actual sink is exercised, not just the sanitizer.
+clamp_with() { # clamp_with <TELEGRAM_MAX_CHARS value> <errfile>
+  local home env
+  home="$(mktemp -d)"; env="$(mktemp -u)"
+  TELEGRAM_NOTIFY_HOME="$home" TELEGRAM_NOTIFY_ENV="$env" TELEGRAM_MAX_CHARS="$1" bash -c '
+    # shellcheck disable=SC1090
+    source "'"$SCRIPT"'"
+    clamp "hello world" "$TELEGRAM_MAX_CHARS"
+  ' 2>"$2"
+}
+errfile="$(mktemp -u)"
+check "TELEGRAM_MAX_CHARS=banana falls back so clamp still returns text, not empty" \
+  "$(clamp_with banana "$errfile")" "hello world"
+check "TELEGRAM_MAX_CHARS=banana produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
+errfile="$(mktemp -u)"
+check "TELEGRAM_MAX_CHARS=010 normalizes to decimal 10, not octal 8" \
+  "$(clamp_with 010 "$errfile")" "hello worl… (truncated)"
+check "TELEGRAM_MAX_CHARS=010 produces zero bytes on stderr" \
+  "$(wc -c < "$errfile" | tr -d ' ')" "0"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
