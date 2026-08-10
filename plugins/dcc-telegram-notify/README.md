@@ -212,7 +212,7 @@ message's own opening lines — nothing is lost, just less polished.
 | `TELEGRAM_EVENTS` | `permission,input,stop-question` | Which notifications send; see above. |
 | `TELEGRAM_ALLOWED_USERS` | *(empty)* | Comma-separated Telegram user ids allowed to reply/tap. Empty = read side off. |
 | `TELEGRAM_REPLY` | `on` | Master switch for the read side; `off` = notifications only. |
-| `TELEGRAM_REPLY_WINDOW` | `600` | Seconds a finished turn keeps listening for a reply. |
+| `TELEGRAM_REPLY_WINDOW` | `600` | Seconds a finished turn keeps listening for a reply. Same practical ceiling **3700** as `TELEGRAM_REPLY_WINDOW_AWAY` below — see that row. |
 | `TELEGRAM_REPLY_WINDOW_AWAY` | `3600` | Same, while away mode is armed; also how long a permission prompt waits for a tap. Practical ceiling **3700** — the `Stop`/`PermissionRequest` hooks in `hooks.json` have a static 3700s timeout, so a higher value lets Claude Code kill the hook first. That fails safe (no reply, same as a timeout), but it never actually waits longer than 3700s. |
 | `TELEGRAM_REPLY_POLL` | `3` | Seconds per `getUpdates` long-poll. |
 | `TELEGRAM_SPOOL_TTL` | `300` | How long an unclaimed spooled update is kept. |

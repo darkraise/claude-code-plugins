@@ -95,10 +95,13 @@ TELEGRAM_REPLY=on
 
 # How long a finished turn keeps listening for a reply, in seconds. Nothing is
 # blocked during this window -- the turn has already ended.
+# Raising this past 3700 has no effect -- see TELEGRAM_REPLY_WINDOW_AWAY below.
 TELEGRAM_REPLY_WINDOW=600
 
 # The same window while away mode is armed, which also governs how long a
 # permission prompt waits for your tap before falling back to the terminal.
+# Practical ceiling 3700s: hooks.json's Stop/PermissionRequest timeout kills the
+# hook before a higher value would fire; it just fails safe, same as a timeout.
 TELEGRAM_REPLY_WINDOW_AWAY=3600
 
 # Seconds per getUpdates long-poll, and how long an unclaimed update is kept.
