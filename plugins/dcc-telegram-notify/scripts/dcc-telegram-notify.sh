@@ -81,6 +81,33 @@ TELEGRAM_TOPIC_MODE=shared
 # The default is everything that leaves the session blocked on you.
 TELEGRAM_EVENTS=permission,input,stop-question
 
+# --- Replying from Telegram --------------------------------------------------
+# Reply to a notification and the session picks your message up and keeps
+# working. THIS IS OFF until you list at least one Telegram user id below: a
+# reply is an instruction Claude executes, and while away mode is armed a tap
+# approves a tool call, so anyone able to post in the chat would otherwise have
+# command execution on this machine.
+# Find your id with: /dcc-telegram-notify whoami
+TELEGRAM_ALLOWED_USERS=
+
+# Master switch for the read side. off = notifications only, as before.
+TELEGRAM_REPLY=on
+
+# How long a finished turn keeps listening for a reply, in seconds. Nothing is
+# blocked during this window -- the turn has already ended.
+TELEGRAM_REPLY_WINDOW=600
+
+# The same window while away mode is armed, which also governs how long a
+# permission prompt waits for your tap before falling back to the terminal.
+TELEGRAM_REPLY_WINDOW_AWAY=3600
+
+# Seconds per getUpdates long-poll, and how long an unclaimed update is kept.
+TELEGRAM_REPLY_POLL=3
+TELEGRAM_SPOOL_TTL=300
+
+# Default duration for /dcc-telegram-notify away when you don't name one.
+TELEGRAM_AWAY_TTL=7200
+
 # --- Optional LLM turn summaries (OFF by default) ----------------------------
 # Leave TELEGRAM_LLM_URL empty to disable. Set it to an OpenAI-compatible base
 # URL to summarize turn-end messages into 1-2 sentences; if the gateway is
@@ -1021,7 +1048,29 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
       away_disarm
       echo "Away mode disarmed. Prompts go straight to your terminal again."
       ;;
+    --reply-status)
+      printf 'read side:      %s\n' "$(reply_enabled && echo enabled || echo disabled)"
+      printf 'allowlist:      %s\n' \
+        "$([ -n "$TELEGRAM_ALLOWED_USERS" ] && printf '%s id(s)' "$(printf '%s' "$TELEGRAM_ALLOWED_USERS" | tr ',' ' ' | wc -w | tr -d ' ')" || echo 'EMPTY — reply-back is off')"
+      printf 'away mode:      %s\n' "$(away_armed && echo armed || echo disarmed)"
+      printf 'spool depth:    %s\n' "$(ls "$SPOOL_DIR" 2>/dev/null | wc -l | tr -d ' ')"
+      printf 'update offset:  %s\n' "$(updates_offset_get)"
+      echo
+      echo "Note: getUpdates is exclusive per bot token. Exactly one machine may"
+      echo "have TELEGRAM_REPLY=on for a given bot; a second machine needs its own."
+      ;;
+    --whoami)
+      [ -n "$TELEGRAM_BOT_TOKEN" ] || die "Set TELEGRAM_BOT_TOKEN first"
+      echo "Send any message to your bot now, then press Enter."
+      read -r _ || true
+      curl -sS --max-time 15 "${API}/getUpdates" | jq -r '
+        [ .result[] | (.message // .callback_query // empty) | .from
+          | select(. != null) | "  \(.id)   \(.first_name // "")\(if .username then " (@" + .username + ")" else "" end)" ]
+        | unique | if length == 0 then "  (nothing seen — post a message to the bot and retry)" else .[] end'
+      echo
+      echo "Put the id in TELEGRAM_ALLOWED_USERS in your telegram.env."
+      ;;
     "") main ;;
-    *) die "unknown option: $1 (use --discover, --test, --edit, --events, or pipe hook JSON on stdin)" ;;
+    *) die "unknown option: $1 (use --discover, --test, --edit, --events, --away, --back, --reply-status, --whoami, or pipe hook JSON on stdin)" ;;
   esac
 fi
