@@ -1733,9 +1733,15 @@ git commit -m "feat(telegram-notify): approve tools from Telegram"
 
 ---
 
-## Task 9: The `AskUserQuestion` gate
+## Task 9: The `AskUserQuestion` gate — DROPPED
 
-**Skip this task entirely if spike 2 in Task 0 showed Claude re-asking rather than accepting the denial reason as an answer.**
+**This task is cancelled.** Spike 2 (see `2026-08-09-reply-back-spike-results.md`) showed a
+session flatly refusing to read a `PreToolUse` denial reason as an answer: it called the
+denial "an error, not a selection" and declined to act on it. `AskUserQuestion` therefore
+stays notify-only. Do not implement anything below; it is kept for the record only.
+
+<details>
+<summary>Original task text (not to be implemented)</summary>
 
 **Files:**
 - Modify: `plugins/dcc-telegram-notify/scripts/dcc-telegram-notify.sh` — new branch in `main()`'s `case`
@@ -1889,6 +1895,10 @@ git commit -m "feat(telegram-notify): answer questions from Telegram"
 
 ---
 
+</details>
+
+---
+
 ## Task 10: Configuration, status, documentation, and the version bump
 
 **Files:**
@@ -1979,6 +1989,16 @@ Add a `## Replying from Telegram` section after `## Which events notify you`, co
 - What a reply does at turn end (wakes the session, nothing is blocked, your typing wins the race if it lands first).
 - Away mode: what it gates, how to arm and disarm, that it is machine-wide, and that it expires.
 - The setup step: run `/dcc-telegram-notify whoami`, put the id in `TELEGRAM_ALLOWED_USERS`, and note that reply-back does nothing until you do.
+- **The trust caveat, verified in the spike and NOT optional to document.** A reply arrives
+  through the hook channel, which Claude Code marks as not being user input. Continuing,
+  reading, analysing and answering work normally; an irreversible action (an edit, a commit,
+  a deploy) may draw a request to confirm at the keyboard instead of running unattended.
+  Permission taps are unaffected, because those return a control-plane decision the CLI
+  honours directly rather than text Claude must decide whether to trust. State this plainly
+  and near the top of the section — a user who expects unattended destructive work and
+  discovers this the hard way will consider the feature broken.
+- `AskUserQuestion` is notify-only: you cannot answer one from Telegram. Say so explicitly,
+  since the notification for it looks answerable.
 - The three gotchas, each as its own short paragraph, worded from the spec's "Known limitations" section: bot privacy mode hides bare group messages so you must either disable it in BotFather or use Telegram's Reply function; `getUpdates` is exclusive so exactly one machine per bot token may enable the read side; and a reply is an instruction Claude executes, with the allowlist as the only boundary.
 
 Add the seven new variables to the config reference table with the defaults from Global Constraints.
