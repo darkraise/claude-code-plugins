@@ -48,6 +48,27 @@ record_last 4343
 check "a main-thread send records under main" \
   "$(cat "$(last_marker_path -100 "")")" "4343"
 
+# Regression: record_last must resolve the SAME effective topic send() posts
+# to. In shared mode with a configured TELEGRAM_TOPIC_ID, SEND_TOPIC is never
+# set (no per-project routing runs), so a call site that read "${SEND_TOPIC:-}"
+# directly instead of going through effective_topic() would record the marker
+# under "main" while the message actually landed in topic 99 -- silently
+# breaking every bare (non-long-pressed) reply typed there. Run in a fresh
+# subprocess so the TELEGRAM_TOPIC_ID/TELEGRAM_TOPIC_MODE env is picked up at
+# source time, the same way the real hook process starts up.
+topic_home="$(mktemp -d)"
+result="$(TELEGRAM_NOTIFY_HOME="$topic_home" TELEGRAM_NOTIFY_ENV="$(mktemp -u)" \
+  TELEGRAM_CHAT_ID=-100 TELEGRAM_TOPIC_MODE=shared TELEGRAM_TOPIC_ID=99 bash -c '
+    # shellcheck disable=SC1090
+    source "'"$SCRIPT"'"
+    record_last 555
+    [ -f "$(last_marker_path -100 99)" ] && echo yes || echo no
+  ')"
+check "record_last falls back to TELEGRAM_TOPIC_ID, not main, when SEND_TOPIC is unset" \
+  "$result" "yes"
+check "record_last does NOT write the marker under main in that case" \
+  "$([ -f "$topic_home/last/-100.main" ] && echo yes || echo no)" "no"
+
 # send() must post reply_markup only when a keyboard is set. A stub curl records
 # what it was handed instead of calling Telegram.
 STUB_DIR="$(mktemp -d)"; PATH="$STUB_DIR:$PATH"

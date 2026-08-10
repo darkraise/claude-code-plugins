@@ -267,6 +267,7 @@ away_disarm() { rm -f "$AWAY_FILE" 2>/dev/null; return 0; }
 # It expires because a rewake-driven turn may never fire UserPromptSubmit at
 # all, and a lingering marker would eat the next genuine local prompt's disarm.
 : "${TELEGRAM_REMOTE_MARKER_TTL:=120}"
+TELEGRAM_REMOTE_MARKER_TTL=$(sanitize_seconds "$TELEGRAM_REMOTE_MARKER_TTL" 120)
 remote_marker_fresh() {
   local f="$STATE_DIR/${1}.remote" mt
   mt=$(file_mtime "$f" 2>/dev/null) || return 1
@@ -413,8 +414,16 @@ map_remove() {
   ) 9>>"${TELEGRAM_TOPIC_MAP}.lock"
 }
 
+# The topic a message is SENT to and the topic a reply is MATCHED against must
+# be the SAME value, or bare replies (no long-press Reply, just typed into the
+# topic) vanish silently: send() would post to the fallback topic while a call
+# site that forgot this accessor left MATCH_TOPIC empty, so match_bare_topic
+# rejects every message actually sitting in that topic. One accessor for every
+# caller keeps the two from ever drifting apart again.
+effective_topic() { printf '%s' "${SEND_TOPIC:-$TELEGRAM_TOPIC_ID}"; }
+
 send() {
-  local text="$1" topic="${SEND_TOPIC:-$TELEGRAM_TOPIC_ID}"
+  local text="$1" topic; topic="$(effective_topic)"
   local -a args=(
     --silent --show-error --max-time 15
     --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}"
@@ -494,7 +503,7 @@ pending_rm()  { rm -f "$PENDING_DIR/$1.json" 2>/dev/null; return 0; }
 # newest notification there without the user long-pressing to Reply.
 record_last() {
   local p
-  p=$(last_marker_path "$TELEGRAM_CHAT_ID" "${SEND_TOPIC:-}")
+  p=$(last_marker_path "$TELEGRAM_CHAT_ID" "$(effective_topic)")
   mkdir -p "$(dirname "$p")" 2>/dev/null || return 0
   printf '%s' "$1" > "$p" 2>/dev/null
   return 0
@@ -943,7 +952,7 @@ $(printf '%s' "$body" | html_escape)" ;;
       deadline=$(( $(date +%s) + window ))
       rm -f "$STATE_DIR/${session}.remote"
       dbg "   listen: waiting ${window}s for a reply to message $mid"
-      reply=$(await_reply "$start_file" "$mid" "$TELEGRAM_CHAT_ID" "${SEND_TOPIC:-}" "$deadline") || exit 0
+      reply=$(await_reply "$start_file" "$mid" "$TELEGRAM_CHAT_ID" "$(effective_topic)" "$deadline") || exit 0
       [ -n "$reply" ] || exit 0
 
       # A rewake does not fire UserPromptSubmit, so restore the invariant that
