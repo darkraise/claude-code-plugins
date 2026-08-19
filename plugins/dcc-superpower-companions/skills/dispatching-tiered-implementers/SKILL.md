@@ -14,15 +14,22 @@ dispatch each task's assigned implementer."
 
 ## What changes, and what does not
 
-**Changes.** Exactly one thing: the implementer dispatch passes
-`subagent_type: dcc-superpower-companions:impl-<model>-<effort>` and passes **no
-`model` argument**.
+**Changes.** Three things:
+
+1. The implementer dispatch passes
+   `subagent_type: dcc-superpower-companions:impl-<model>-<effort>` and passes
+   **no `model` argument**.
+2. The task-review seat is a judge agent - `judge-fable`, or `judge-opus` when
+   Fable is unavailable - dispatched with the criteria file appended to
+   superpowers' reviewer prompt. See Score the review.
+3. The scoped re-review is asked for one extra line, a progress reading, which
+   can pull the escalation point from round 4 to round 3. See Progress.
 
 **Does not change.** The brief and report file protocol, the review package, the
-task reviewer, the scoped re-review, the five-round cap, the breaker and its
-adjudication rules, the final whole-branch review, and the handoff to
-superpowers:finishing-a-development-branch. Reviewer model selection stays
-superpowers'. Implementers are still never dispatched in parallel.
+five-round cap, the breaker and its adjudication rules, the final whole-branch
+review, and the handoff to superpowers:finishing-a-development-branch.
+Implementers are still never dispatched in parallel, and the final whole-branch
+review keeps superpowers' own model selection.
 
 ## The one superpowers instruction this supersedes
 
@@ -75,7 +82,8 @@ dispatch, including all reviewers.
    `minor (deferred)` and `parked` lines for triage, so a line either of them
    misreads costs a re-dispatch of finished work or a bogus merge blocker.
    Extending a line superpowers itself writes is a different act and is allowed
-   in exactly one place, described under Escalate.
+   in exactly three places: under Escalate, under Score the review, and under
+   Progress.
 
    `Task <N>: implementer <agent> (assigned)` is the only line you add before
    the task's first review. Add it once, right after dispatch.
@@ -99,8 +107,9 @@ three points - the two superpowers defines, plus one this skill adds:
 - **Round 3, when progress has stalled** - see Progress below. This can only
   pull the escalation point earlier, never later.
 
-Escalation does **not** apply to fix rounds 1 to 3. Those resume the original
-agent, which preserves its model, its effort, and its context. Re-dispatching a
+Escalation does **not** apply to fix rounds 1 and 2, nor to round 3 unless
+Progress says the loop has stalled. Those rounds resume the original agent,
+which preserves its model, its effort, and its context. Re-dispatching a
 different tier there discards exactly what superpowers is preserving.
 
 Record each escalation **inside** superpowers' own fix-round line, by appending
@@ -135,6 +144,11 @@ dispatch them fresh. Record it as a ruling in the ledger:
 ```
 Ruling: split Task <N> at the top rung into <N>a and <N>b - impl-opus-high exhausted after 5 rounds - if wrong, the halves review separately and merge back
 ```
+
+This `Ruling:` line is exempt from the last-line rule above, because it is not a
+`Task <N>:` line. Superpowers writes its own `Ruling:` lines in the same
+position after the cap, so crash recovery already steps over them when it looks
+for a task's last `Task <N>:` verb.
 
 **A task may be split-escalated once.** If a split half also exhausts the
 ladder, report BLOCKED through superpowers' existing contract. Do not loop.
@@ -173,6 +187,11 @@ Score against those criteria and nothing else. Where a criterion tells you to
 ignore something, ignoring it is part of scoring correctly.
 ```
 
+Expand `[PLUGIN_ROOT]` to this plugin's directory before sending the prompt. A
+judge handed the literal token cannot open the file. The hook uses
+`${CLAUDE_PLUGIN_ROOT}` for the same value; in a dispatch prompt you write the
+resolved path.
+
 **The scores are additive.** superpowers' fix loop triggers on its spec-failure
 verdict, on Critical findings, and on Important findings. Keep every one of
 those; the scores ride alongside and never replace them. A judge that returns
@@ -180,6 +199,16 @@ scores but drops the verdicts has produced an unusable review - re-dispatch it.
 
 Read the scores as bands: **1-8 fails** and joins the fix-loop trigger; **9-13**
 is borderline, recorded and adjudicated by you; **14-20 passes**.
+
+Record the scores by extending superpowers' own completion line, whether one
+judge scored the task or three:
+
+```
+Task <N>: complete (commits <base7>..<head7>, review clean; scores spec 17 / verification 15 / quality 16)
+```
+
+Never author a separate scores line. Superpowers keys crash recovery off
+`Task <N>: complete`, and a line landing after it hides it.
 
 ### Repeated evaluation on risk-3 tasks
 
@@ -195,7 +224,7 @@ on this diff, which is a fact about the review, not about the code.
 Record the reading in the ledger line you already write:
 
 ```
-Task <N>: complete (scores spec 17 / verification 15 / quality 16, K=3)
+Task <N>: complete (commits <base7>..<head7>, review clean; scores spec 17 / verification 15 / quality 16, K=3)
 ```
 
 ## Progress
@@ -232,7 +261,6 @@ Task <N>: fix round 3/5 (1 addressed, 1 open - stale cache; commits a7f..b21; pr
 | Situation | Response |
 |-----------|----------|
 | Task has no `**Implementer:**` line | Score it with the rubric in `reference/ladder.md`, dispatch, and record `Task <N>: implementer <agent> (scored at dispatch)` |
-| The line names an agent with no definition file | Stop and ask your human partner. Never fall back silently |
 | The line names a retired agent | Map it through the `retired` table, dispatch the target, and state the substitution in the ledger |
 | The line names an agent that is neither current nor retired | Stop and ask your human partner. Never fall back silently |
 | Fable is unavailable or declined for a judge seat | Dispatch `judge-opus`, say so, and continue |
