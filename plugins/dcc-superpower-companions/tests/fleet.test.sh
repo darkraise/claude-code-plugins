@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# The fleet must be exactly the 16 valid model/effort pairings, and every
-# definition must carry frontmatter the Claude Code agent loader accepts.
+# The fleet is ten agents in two classes. Seven implementers pin one
+# model/effort pairing each and carry the full toolset. Three role agents -
+# two judges and one scout - are read-only by registry: their tools list omits
+# Edit, Write, NotebookEdit, and Agent, so "reviewers do not mutate the tree"
+# and "reviewers do not spawn subagents" are enforced rather than requested.
 #
 # Haiku 4.5 does not support reasoning effort at all, so impl-haiku must NOT
-# carry an effort field; the other three models support all five levels.
+# carry an effort field. The xhigh and max levels are retired everywhere, and
+# no implementer runs on Fable.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,10 +28,11 @@ fm() {
   ' "$1"
 }
 
-EXPECTED="impl-fable-high impl-fable-low impl-fable-max impl-fable-medium impl-fable-xhigh impl-haiku impl-opus-high impl-opus-low impl-opus-max impl-opus-medium impl-opus-xhigh impl-sonnet-high impl-sonnet-low impl-sonnet-max impl-sonnet-medium impl-sonnet-xhigh"
+EXPECTED="impl-haiku impl-opus-high impl-opus-low impl-opus-medium impl-sonnet-high impl-sonnet-low impl-sonnet-medium judge-fable judge-opus scout-sonnet"
+ROLE_TOOLS="Read, Grep, Glob, WebFetch"
 
 actual=$(cd "$AGENTS" 2>/dev/null && ls *.md 2>/dev/null | sed 's/\.md$//' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')
-check "fleet contains exactly the 16 expected agents" "$actual" "$EXPECTED"
+check "fleet contains exactly the 10 expected agents" "$actual" "$EXPECTED"
 
 for f in "$AGENTS"/*.md; do
   [ -e "$f" ] || continue
@@ -43,23 +48,42 @@ for f in "$AGENTS"/*.md; do
   check "$base: model is a valid alias" "$got_model" "ok"
 
   effort=$(fm "$f" effort)
-  if [ "$model" = "haiku" ]; then
-    check "$base: haiku carries no effort field" "${effort:-ABSENT}" "ABSENT"
-  else
-    check "$base: effort matches the name suffix" "$effort" "${base##*-}"
-    case "$effort" in
-      low|medium|high|xhigh|max) got_effort=ok ;;
-      *) got_effort="invalid:$effort" ;;
-    esac
-    check "$base: effort is a valid level" "$got_effort" "ok"
-  fi
+  case "$effort" in
+    ''|low|medium|high) got_effort=ok ;;
+    *) got_effort="retired-or-invalid:$effort" ;;
+  esac
+  check "$base: effort is an allowed level" "$got_effort" "ok"
+
+  case "$base" in
+    impl-*)
+      # Implementers pin model and effort from their own name, carry the full
+      # toolset, and preload the completion-discipline skill.
+      check "$base: implementer does not run on fable" \
+        "$([ "$model" = fable ] && echo yes || echo no)" "no"
+      if [ "$model" = "haiku" ]; then
+        check "$base: haiku carries no effort field" "${effort:-ABSENT}" "ABSENT"
+      else
+        check "$base: effort matches the name suffix" "$effort" "${base##*-}"
+      fi
+      check "$base: does not set tools" "$(grep -c '^tools:' "$f")" "0"
+      check "$base: preloads verification-before-completion" \
+        "$(grep -c '^  - superpowers:verification-before-completion$' "$f")" "1"
+      ;;
+    judge-*|scout-*)
+      # Role agents are read-only by registry, not by prose. The absent tools
+      # are the point: no Edit, no Write, no Agent.
+      check "$base: carries the read-only toolset" "$(fm "$f" tools)" "$ROLE_TOOLS"
+      check "$base: effort is high or medium" \
+        "$(case "$effort" in high|medium) echo ok ;; *) echo "invalid:$effort" ;; esac)" "ok"
+      check "$base: preloads no skills" "$(grep -c '^skills:' "$f")" "0"
+      ;;
+    *)
+      check "$base: name matches a known agent class" "unknown-class" "impl|judge|scout"
+      ;;
+  esac
 
   check "$base: does not set isolation" \
     "$(grep -c '^isolation:' "$f")" "0"
-  check "$base: does not set tools" \
-    "$(grep -c '^tools:' "$f")" "0"
-  check "$base: preloads verification-before-completion" \
-    "$(grep -c '^  - superpowers:verification-before-completion$' "$f")" "1"
   check "$base: does not preload test-driven-development" \
     "$(grep -c 'test-driven-development' "$f")" "0"
   # grep -P is unavailable here; awk with an octal byte range is portable.

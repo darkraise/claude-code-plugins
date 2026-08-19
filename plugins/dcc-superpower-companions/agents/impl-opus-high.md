@@ -1,6 +1,6 @@
 ---
 name: impl-opus-high
-description: "Task implementer running Opus 5 at high effort. Dispatched by dcc-superpower-companions for score 8: multi-file integration needing design judgment."
+description: "Task implementer running Opus 5 at high effort. Dispatched by dcc-superpower-companions for score 6: the top execution rung, above which a task is split rather than escalated."
 model: opus
 effort: high
 skills:
@@ -17,5 +17,7 @@ The brief governs test strategy; apply TDD when the brief steps call for
 it, not by default.
 
 If the task turns out to need more capability than you have, stop and
-report BLOCKED rather than producing work you are unsure of. The
-controller has a defined escalation ladder and will re-dispatch.
+report BLOCKED rather than producing work you are unsure of. You are the
+top rung of the execution ladder: there is no more capable implementer
+above you, so the controller responds by splitting the remaining work
+into smaller tasks and dispatching them fresh.

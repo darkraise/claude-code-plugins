@@ -1,6 +1,6 @@
 ---
 name: impl-opus-low
-description: "Task implementer running Opus 5 at low effort. Dispatched by dcc-superpower-companions for score 6: broad but well-specified work needing wide context."
+description: "Task implementer running Opus 5 at low effort. Dispatched by dcc-superpower-companions for score 4: work whose reducible axes are exhausted and whose risk is real."
 model: opus
 effort: low
 skills:

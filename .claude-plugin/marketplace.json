@@ -18,9 +18,9 @@
     {
       "name": "dcc-superpower-companions",
       "source": "./plugins/dcc-superpower-companions",
-      "description": "Extends superpowers with 16 model and effort tiered implementer subagents, a four-axis task scoring rubric, and a defined escalation ladder.",
+      "description": "Extends superpowers with 10 tiered subagents: seven implementers, two read-only judges, and a scout. Scores every plan task on a four-axis rubric that sends over-scoring tasks back to be split, dispatches with a defined escalation ladder, and scores task reviews against named criteria.",
       "category": "workflow",
-      "keywords": ["superpowers", "subagents", "planning", "effort", "model-selection"]
+      "keywords": ["superpowers", "subagents", "planning", "effort", "model-selection", "verification", "code-review"]
     },
     {
       "name": "dcc-statusline",
