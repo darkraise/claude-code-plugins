@@ -21,20 +21,41 @@ two skills that write the choice into the plan and read it back.
 
 ## What you get
 
-**16 implementer agents.** Sonnet 5, Opus 5, and Fable 5 at each of `low`,
-`medium`, `high`, `xhigh`, and `max`, plus one Haiku 4.5 agent. Haiku carries no
-effort field because Haiku does not support reasoning effort.
+**Ten agents in two classes.** Seven implementers - Sonnet 5 and Opus 5 at
+`low`, `medium`, and `high`, plus one Haiku 4.5 agent. Three read-only role
+agents - `judge-fable`, its `judge-opus` fallback, and `scout-sonnet` - whose
+`tools:` frontmatter omits `Edit`, `Write`, and `Agent`, so a reviewer that
+cannot modify the tree or spawn subagents is a fact about the registry rather
+than a request in a prompt.
 
-**A four-axis rubric.** Files touched, spec completeness, coupling, and risk,
-each scored 0 to 3. The total from 0 to 12 indexes an assignment table, so two
-planners scoring a task identically always reach the same agent. In practice
-initial assignments cluster in the 2 to 8 band, because a plan written to
-superpowers' no-placeholders rule scores near zero on spec completeness by
-construction; the top rungs are reached by escalation.
+`xhigh` and `max` are retired everywhere, and Fable never implements. Above
+`impl-opus-high` the answer to a hard task is to split it, not to escalate it.
+
+**A four-axis rubric that gates the plan.** Files, spec completeness, coupling,
+and risk, each scored 0 to 3. Three of those four measure how the task was
+drawn, not how hard the change is, so Rule S sends a task scoring 4 or more
+across them back to be split rather than to a larger model. That cap is what
+makes the assignment table stop at 6, which is exactly the seven implementers.
 
 **An escalation ladder.** Every agent has exactly one successor, changing model
-before effort. Walks terminate at `impl-fable-max`. Used at superpowers' fix
-rounds 4 and 5 and at its BLOCKED handler.
+before effort. Walks terminate at a SPLIT action rather than an agent. Used at
+superpowers' fix rounds 4 and 5 and at its BLOCKED handler.
+
+**Criteria-scored reviews.** `criteria/` holds narrow scored criteria adapted
+from LLM-as-a-Verifier (arXiv:2607.05391): a ground-truth note the judge sees on
+every evaluation, and 2 to 4 criteria that each say where to look, what scores
+high, what scores low, and what to ignore. Reviews return a 1-to-20 score per
+criterion alongside superpowers' own verdicts - alongside, never replacing them,
+because its fix loop keys on those verdicts. Risk-3 tasks are scored three times
+and averaged, and a spread above 6 points sends the diff to the controller
+instead of to the mean.
+
+**Best-of-3 approach selection.** `selecting-approaches` gates an open approach
+decision to inline, one advisory pass, or three scouts ranked by a judge in a
+ring pass that cancels positional bias. Five numbered skip conditions send most
+decisions to inline, including bug fixes with a located root cause - where
+ranking candidates generated before the root cause is known would launder
+guesses into a confident pick.
 
 ## Requirements
 
@@ -124,3 +145,6 @@ Requires `jq`. No model calls.
 
 `reference/ladder.md` holds the rubric, the assignment table, and the escalation
 table. Both skills and the test suite read that one copy.
+
+`criteria/` holds the verifier criteria; `criteria/TEMPLATE.md` documents the
+format. `tests/criteria.test.sh` validates every file in that directory.
