@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook on the Skill tool. Adds context when superpowers is about to
-# write or execute a plan, and stays silent otherwise.
+# brainstorm an approach, write a plan, or dispatch a plan's tasks, and stays
+# silent otherwise.
 #
 # The context is phrased as factual project information rather than as an
 # instruction: text framed as an out-of-band system command can trip Claude's

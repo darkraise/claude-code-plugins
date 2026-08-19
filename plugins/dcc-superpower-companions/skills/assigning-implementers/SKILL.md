@@ -16,7 +16,7 @@ implementer to each task."
 
 Use alongside superpowers:writing-plans, after the tasks are drafted and before
 the plan is saved. Retrofitting an existing plan is the same process: read it,
-score each task, add the two lines.
+score each task, and add the assignment lines.
 
 The assignment is only acted on by superpowers:subagent-driven-development.
 Under superpowers:executing-plans, which runs tasks inline in the current
@@ -79,7 +79,7 @@ a skip.
 The agent name is fully qualified. Plugin subagents are namespaced
 `<plugin>:<agent>`, and an unqualified name may not resolve.
 
-Both lines land in the brief the implementer reads, because
+These lines land in the brief the implementer reads, because
 superpowers' `scripts/task-brief` copies a task block verbatim. That is
 intended: an implementer knowing its task's blast radius is useful context.
 
@@ -120,8 +120,10 @@ inline path that never dispatches subagents.
 
 Before saving the plan:
 
-- Every task has both lines. A task without them gets scored at dispatch time
-  instead, which works but loses the audit trail.
+- Every task has an `**Implementer:**` line and an `**Evaluation:**` line, plus
+  an `**Approach:**` line whenever the task involved an approach decision. A
+  task missing the first two gets scored at dispatch time instead, which works
+  but loses the audit trail.
 - Every agent name is fully qualified and appears in
   `reference/ladder.md`'s assignment table.
 - Every `**Evaluation:**` line's four scores actually sum to the stated total,

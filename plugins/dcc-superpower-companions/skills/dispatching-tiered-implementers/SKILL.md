@@ -37,14 +37,27 @@ superpowers:subagent-driven-development states in bold that you must always
 specify the model explicitly when dispatching a subagent, because an omitted
 model inherits the session's model.
 
-**For implementer dispatches only, that is superseded.** The Agent tool's
-`model` argument overrides the agent file's `model` frontmatter, but there is no
-matching `effort` argument, so effort keeps its frontmatter value. Passing a
-model therefore produces a mismatched pairing such as Sonnet running at xhigh.
+**For dispatches of this plugin's fleet agents, that is superseded.** The Agent
+tool's `model` argument overrides the agent file's `model` frontmatter, but
+there is no matching `effort` argument, so effort keeps its frontmatter value.
+Passing a model can therefore produce a pairing the fleet does not ship: a
+`model: haiku` argument landing on an agent whose file sets `effort: high` gives
+Haiku an effort level it does not support, since Haiku ships one flavour with no
+effort variants.
 
 The rule's intent survives intact: the agent definition pins the model, so
-nothing inherits the session default. The rule remains in force for every other
-dispatch, including all reviewers.
+nothing inherits the session default.
+
+The supersession covers every fleet agent whose frontmatter pins a model - the
+seven implementers, both judges, and the scout. Passing a `model` argument to
+any of them overrides the pin while `effort` keeps its frontmatter value, so the
+agent runs at a tier the ledger does not record - the audit failure this plugin
+exists to prevent. For a judge seat it is worse: the override silently bypasses
+the Fable-unavailable protocol, which requires you to say the substitution
+aloud.
+
+The rule remains in force for general-purpose dispatches, which in this loop
+means superpowers' final whole-branch review.
 
 ## Dispatch a task
 
@@ -272,8 +285,10 @@ degraded to the session default, every task would run at the session's model and
 effort and nothing in the output would reveal it. That is precisely the
 expensive-model failure superpowers' Model Selection section exists to prevent.
 
-The unavailable-model row exists because Fable is not on every account. Drop the
-model one rung and keep the effort. State it; never substitute silently.
+The unavailable-model row covers Opus not being on every account. Drop the model
+one rung and keep the effort the score asked for. State the substitution in the
+ledger and to your partner; never substitute silently. Fable unavailability is a
+different case, handled by the judge-seat row above it.
 
 That substitution runs out below Sonnet. Haiku ships in one flavour with no
 effort variants, so "same effort, one model down" has no target from a

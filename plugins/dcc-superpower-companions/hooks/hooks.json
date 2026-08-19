@@ -1,5 +1,5 @@
 {
-  "description": "Adds implementer-assignment context when superpowers writes or executes a plan.",
+  "description": "Adds approach and implementer-assignment context when superpowers brainstorms an approach, writes a plan, or dispatches a plan's tasks.",
   "hooks": {
     "PreToolUse": [
       {
