@@ -1,6 +1,6 @@
 ---
 name: impl-opus-medium
-description: "Task implementer running Opus 5 at medium effort. Dispatched by dcc-superpower-companions for score 7: multi-file integration with real coupling."
+description: "Task implementer running Opus 5 at medium effort. Dispatched by dcc-superpower-companions for score 5: coupled work carrying a shared-path or data-shape risk."
 model: opus
 effort: medium
 skills:
