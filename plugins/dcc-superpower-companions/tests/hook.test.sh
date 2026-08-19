@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# The hook must fire for exactly two superpowers skills and stay silent for
+# The hook must fire for exactly three superpowers skills and stay silent for
 # everything else.
 #
 # superpowers:executing-plans is deliberately NOT matched: it runs plan tasks
 # inline in the current session without subagents, so nudging it toward tiered
 # dispatch would push it to do the one thing it is designed not to do.
+#
+# superpowers:brainstorming IS matched, because that is where an approach
+# decision is open and selecting-approaches has something to say about it.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +29,7 @@ run_status() { # run_status <skill-name> - feed a synthetic PreToolUse payload, 
     | bash "$SCRIPT" >/dev/null 2>&1
 }
 
-for skill in superpowers:writing-plans superpowers:subagent-driven-development; do
+for skill in superpowers:writing-plans superpowers:subagent-driven-development superpowers:brainstorming; do
   out=$(run "$skill")
   check "$skill: emits valid JSON" \
     "$(jq -e . >/dev/null 2>&1 <<<"$out" && echo yes || echo no)" "yes"
@@ -45,8 +48,10 @@ check "writing-plans context names the assigning skill" \
   "$(run superpowers:writing-plans | jq -r '.hookSpecificOutput.additionalContext' | grep -c 'assigning-implementers')" "1"
 check "subagent-driven-development context names the dispatching skill" \
   "$(run superpowers:subagent-driven-development | jq -r '.hookSpecificOutput.additionalContext' | grep -c 'dispatching-tiered-implementers')" "1"
+check "brainstorming context names the selecting skill" \
+  "$(run superpowers:brainstorming | jq -r '.hookSpecificOutput.additionalContext' | grep -c 'selecting-approaches')" "1"
 
-for skill in superpowers:executing-plans superpowers:brainstorming other:thing ""; do
+for skill in superpowers:executing-plans other:thing ""; do
   label="${skill:-<empty>}"
   check "$label: emits nothing" "$(run "$skill" | wc -c | tr -d ' ')" "0"
   run_status "$skill"
