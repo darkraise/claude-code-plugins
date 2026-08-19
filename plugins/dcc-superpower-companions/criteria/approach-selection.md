@@ -31,21 +31,25 @@ approach is; effort belongs to Simplicity.
 
 ### Cost of Being Wrong {#reversibility}
 
-Consider what happens if this approach turns out to be the wrong choice six
-tasks later. Score HIGH when backing out is a revert - the approach is additive,
-its blast radius is one place, and nothing downstream is built to depend on its
-shape. Score LOW when it commits early to a data shape, a public interface, a
-stored format, or a dependency that later work would have to be rewritten
-around, and lower still when the commitment is invisible from the call sites it
-constrains. Ignore whether the approach is likely to be wrong; only how
-expensive it is if it is.
+Look at what each approach commits to and how far that commitment reaches: the
+files it names, the interfaces it fixes, and what later work would have to
+build on it. Consider what happens if this approach turns out to be the wrong
+choice six tasks later. Score HIGH when backing out is a revert - the approach
+is additive, its blast radius is one place, and nothing downstream is built to
+depend on its shape. Score LOW when it commits early to a data shape, a public
+interface, a stored format, or a dependency that later work would have to be
+rewritten around, and lower still when the commitment is invisible from the
+call sites it constrains. Ignore whether the approach is likely to be wrong;
+only how expensive it is if it is.
 
 ### Simplicity {#simplicity}
 
-Score HIGH for the approach that a reader meeting this code for the first time
-would understand fastest, and that solves exactly the stated problem. Score LOW
-for machinery built for requirements nobody has stated, configuration with one
-caller, indirection that adds a hop without adding a boundary, or a general
-mechanism where a specific one was asked for. Fewer moving parts wins ties.
-Ignore fit and reversibility, which the other criteria own, and do not reward
-brevity that works by leaving a stated requirement unaddressed.
+Read what each approach proposes to build, and the problem statement it is
+answering. Score HIGH for the approach that a reader meeting this code for the
+first time would understand fastest, and that solves exactly the stated
+problem. Score LOW for machinery built for requirements nobody has stated,
+configuration with one caller, indirection that adds a hop without adding a
+boundary, or a general mechanism where a specific one was asked for. Fewer
+moving parts wins ties. Ignore fit and reversibility, which the other criteria
+own, and do not reward brevity that works by leaving a stated requirement
+unaddressed.
